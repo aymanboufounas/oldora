@@ -1,0 +1,67 @@
+# =========================================================
+#  OLDORA - .htaccess (Error Pages + Security + Performance)
+# =========================================================
+
+RewriteEngine On
+
+# --- 1) Force HTTPS ---
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# --- 2) Custom Error Pages ---
+ErrorDocument 400 /errors/400.php
+ErrorDocument 401 /errors/401.php
+ErrorDocument 403 /errors/403.php
+ErrorDocument 404 /404.php
+ErrorDocument 405 /errors/405.php
+ErrorDocument 408 /errors/408.php
+ErrorDocument 410 /errors/410.php
+ErrorDocument 413 /errors/413.php
+ErrorDocument 415 /errors/415.php
+ErrorDocument 429 /errors/429.php
+
+ErrorDocument 500 /errors/500.php
+ErrorDocument 501 /errors/501.php
+ErrorDocument 502 /errors/502.php
+ErrorDocument 503 /errors/503.php
+ErrorDocument 504 /errors/504.php
+
+# --- 3) Block access to sensitive files ---
+<FilesMatch "^(\.env|\.htaccess|composer\.(json|lock)|phpunit\.xml|\.git|\.gitignore|\.svn|\.DS_Store)$">
+  Require all denied
+</FilesMatch>
+
+# Block common backup extensions
+<FilesMatch "\.(bak|backup|old|orig|save|swp|sql|zip|tar|gz)$">
+  Require all denied
+</FilesMatch>
+
+# --- 4) Disable directory listing ---
+Options -Indexes
+
+# --- 5) Basic security headers (if mod_headers enabled) ---
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# --- 6) Cache static files (optional) ---
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/png "access plus 30 days"
+  ExpiresByType image/jpg "access plus 30 days"
+  ExpiresByType image/jpeg "access plus 30 days"
+  ExpiresByType image/webp "access plus 30 days"
+  ExpiresByType image/svg+xml "access plus 30 days"
+  ExpiresByType text/css "access plus 7 days"
+  ExpiresByType application/javascript "access plus 7 days"
+  ExpiresByType application/json "access plus 7 days"
+  ExpiresDefault "access plus 1 day"
+</IfModule>
+
+# --- 7) Compression (optional) ---
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/plain text/html text/xml text/css application/javascript application/json
+</IfModule>

@@ -1,0 +1,7 @@
+# security.txt for oldora.vip
+
+Contact: mailto:security@oldora.vip
+Encryption: https://oldora.vip/pgp-key.txt
+Acknowledgements: https://oldora.vip/security-acknowledgements.html
+Policy: https://oldora.vip/policy.php
+Expires: 2026-12-31

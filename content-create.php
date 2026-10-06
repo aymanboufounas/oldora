@@ -65,7 +65,7 @@ if (!$user) {
 
 $userId = (int) $user['id'];
 $creditCost = $type === 'image' ? max(1, (int) oldora_env('IMAGE_CREDIT_COST', '1')) : max(1, (int) oldora_env('VIDEO_CREDIT_COST', '5'));
-$provider = 'openai';
+$provider = $type === 'video' ? oldora_video_provider() : 'openai';
 $starting = 'starting';
 
 $con->begin_transaction();
@@ -99,7 +99,7 @@ try {
         $update->execute();
         $update->close();
     } else {
-        $video = oldora_start_video($prompt);
+        $video = oldora_start_video($prompt, $provider);
         $processing = (string) ($video['status'] ?? 'queued');
         if (!in_array($processing, ['queued', 'in_progress'], true)) {
             $processing = 'processing';

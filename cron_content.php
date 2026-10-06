@@ -31,12 +31,12 @@ $videoRows = $con->query("SELECT * FROM content_items WHERE media_type = 'video'
 while ($content = $videoRows->fetch_assoc()) {
     $summary['videos_checked']++;
     try {
-        $remote = oldora_get_video_job($content['provider_job_id']);
+        $remote = oldora_get_video_job($content['provider_job_id'], $content['provider']);
         $remoteStatus = (string) ($remote['status'] ?? 'in_progress');
         $progress = max(0, min(100, (int) ($remote['progress'] ?? 0)));
 
         if ($remoteStatus === 'completed') {
-            $asset = oldora_download_video($content['provider_job_id'], (int) $content['user_id']);
+            $asset = oldora_download_video($content['provider_job_id'], (int) $content['user_id'], $content['provider']);
             $ready = 'ready';
             $progress = 100;
             $stmt = $con->prepare('UPDATE content_items SET status = ?, progress = ?, asset_url = ?, asset_path = ?, error_message = NULL WHERE id = ?');

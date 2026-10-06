@@ -1,0 +1,59 @@
+-- Fresh development databases only. Does not migrate existing production tables.
+CREATE TABLE IF NOT EXISTS users (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ full_name VARCHAR(255) NOT NULL,
+ email VARCHAR(255) NOT NULL UNIQUE,
+ password VARCHAR(255) NOT NULL,
+ ip_address VARCHAR(45) NOT NULL DEFAULT '',
+ role VARCHAR(30) NOT NULL DEFAULT 'user',
+ status VARCHAR(30) NOT NULL DEFAULT 'active',
+ plan_type VARCHAR(40) NOT NULL DEFAULT 'free',
+ is_paid TINYINT NOT NULL DEFAULT 0,
+ referral_code VARCHAR(100) NULL UNIQUE,
+ referred_by BIGINT UNSIGNED NULL,
+ credits INT NOT NULL DEFAULT 0,
+ referral_count INT NOT NULL DEFAULT 0,
+ failed_login_attempts INT NOT NULL DEFAULT 0,
+ locked_until DATETIME NULL,
+ google_secret VARCHAR(255) NULL,
+ is_2fa_enabled TINYINT NOT NULL DEFAULT 0,
+ code VARCHAR(20) NULL,
+ otp_code VARCHAR(20) NULL,
+ otp_expiry DATETIME NULL,
+ instagram_connected TINYINT NOT NULL DEFAULT 0,
+ youtube_connected TINYINT NOT NULL DEFAULT 0,
+ tiktok_connected TINYINT NOT NULL DEFAULT 0,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS automation_settings (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ user_email VARCHAR(255) NOT NULL,
+ schedule_json LONGTEXT NULL,
+ is_active TINYINT NOT NULL DEFAULT 0,
+ KEY idx_automation_user (user_email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS support_tickets (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ user_email VARCHAR(255) NOT NULL,
+ subject VARCHAR(255) NOT NULL,
+ message TEXT NOT NULL,
+ image_path TEXT NULL,
+ admin_reply TEXT NULL,
+ status VARCHAR(30) NOT NULL DEFAULT 'open',
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ KEY idx_support_user (user_email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS login_logs (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ email VARCHAR(255) NOT NULL,
+ ip_address VARCHAR(45) NOT NULL DEFAULT '',
+ country VARCHAR(100) NULL,
+ status VARCHAR(40) NOT NULL,
+ device_info TEXT NULL,
+ attempt_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS banned_visitors (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ user_agent TEXT NOT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

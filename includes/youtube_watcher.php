@@ -341,7 +341,7 @@ if (!function_exists('oldora_process_youtube_watcher')) {
             $reserve->close();
 
             $status = 'starting';
-            $provider = 'openai';
+            $provider = oldora_video_provider();
             $mediaType = 'video';
             $insert = $con->prepare('INSERT INTO content_items (user_id, media_type, prompt, caption, title, description, source_url, status, provider, credits_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $insert->bind_param('issssssssi', $watcher['user_id'], $mediaType, $package['video_prompt'], $package['description'], $package['title'], $package['description'], $latest['url'], $status, $provider, $creditCost);
@@ -360,7 +360,7 @@ if (!function_exists('oldora_process_youtube_watcher')) {
         }
 
         try {
-            $video = oldora_start_video($package['video_prompt']);
+            $video = oldora_start_video($package['video_prompt'], $provider);
             $remoteStatus = (string) ($video['status'] ?? 'queued');
             if (!in_array($remoteStatus, ['queued', 'in_progress'], true)) {
                 $remoteStatus = 'processing';

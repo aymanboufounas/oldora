@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/env.php';
 require_once __DIR__ . '/accounts.php';
+require_once __DIR__ . '/moneyprinter.php';
 
 if (!function_exists('oldora_ensure_content_schema')) {
     function oldora_ensure_content_schema($con)
@@ -135,8 +136,13 @@ if (!function_exists('oldora_generate_image')) {
 }
 
 if (!function_exists('oldora_start_video')) {
-    function oldora_start_video($prompt)
+    function oldora_start_video($prompt, $provider = null)
     {
+        $provider = $provider ?? oldora_video_provider();
+        if ($provider === 'moneyprinterturbo') {
+            return oldora_moneyprinter_start($prompt);
+        }
+        if ($provider !== 'openai') throw new RuntimeException('Unsupported video provider.');
         $fields = [
             'model' => oldora_env('OPENAI_VIDEO_MODEL', 'sora-2'),
             'prompt' => $prompt,
@@ -171,8 +177,10 @@ if (!function_exists('oldora_start_video')) {
 }
 
 if (!function_exists('oldora_get_video_job')) {
-    function oldora_get_video_job($jobId)
+    function oldora_get_video_job($jobId, $provider = 'openai')
     {
+        if ($provider === 'moneyprinterturbo') return oldora_moneyprinter_status($jobId);
+        if ($provider !== 'openai') throw new RuntimeException('Unsupported video provider.');
         $ch = curl_init('https://api.openai.com/v1/videos/' . rawurlencode($jobId));
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -198,8 +206,10 @@ if (!function_exists('oldora_get_video_job')) {
 }
 
 if (!function_exists('oldora_download_video')) {
-    function oldora_download_video($jobId, $userId)
+    function oldora_download_video($jobId, $userId, $provider = 'openai')
     {
+        if ($provider === 'moneyprinterturbo') return oldora_moneyprinter_download($jobId, $userId);
+        if ($provider !== 'openai') throw new RuntimeException('Unsupported video provider.');
         $filename = 'video-' . (int) $userId . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(6)) . '.mp4';
         $path = oldora_generated_directory() . '/' . $filename;
         $handle = fopen($path, 'wb');

@@ -1,0 +1,388 @@
+:root {
+    --oldora-nav-width: 272px;
+    --oldora-nav-bg: rgba(5, 9, 20, .94);
+    --oldora-nav-border: rgba(255, 255, 255, .09);
+    --oldora-nav-text: #f7f9ff;
+    --oldora-nav-muted: #8d96aa;
+    --oldora-cyan: #42e8e0;
+    --oldora-blue: #6487ff;
+    --oldora-purple: #a66cff;
+}
+
+body.oldora-shared-shell {
+    padding-left: var(--oldora-nav-width) !important;
+}
+
+.oldora-menu-sidebar,
+.oldora-mobile-header,
+.oldora-menu-overlay,
+.oldora-menu-sidebar * {
+    box-sizing: border-box;
+}
+
+.oldora-menu-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 10050;
+    width: var(--oldora-nav-width);
+    display: flex;
+    flex-direction: column;
+    padding: 18px 14px 14px;
+    color: var(--oldora-nav-text);
+    background:
+        radial-gradient(circle at 15% 0, rgba(66, 232, 224, .13), transparent 31%),
+        radial-gradient(circle at 100% 45%, rgba(166, 108, 255, .12), transparent 38%),
+        var(--oldora-nav-bg);
+    border-right: 1px solid var(--oldora-nav-border);
+    box-shadow: 20px 0 60px rgba(0, 0, 0, .24);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    font-family: Inter, Cairo, system-ui, -apple-system, sans-serif;
+}
+
+.oldora-menu-brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px 18px;
+}
+
+.oldora-menu-brand > a,
+.oldora-mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    color: #fff !important;
+    text-decoration: none !important;
+}
+
+.oldora-menu-brand > a > span:last-child {
+    display: grid;
+}
+
+.oldora-menu-brand strong,
+.oldora-mobile-brand strong {
+    font-size: 16px;
+    letter-spacing: .12em;
+}
+
+.oldora-menu-brand small {
+    margin-top: 2px;
+    color: var(--oldora-nav-muted);
+    font-size: 10px;
+    letter-spacing: .02em;
+}
+
+.oldora-brand-mark,
+.oldora-brand-logo {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border-radius: 12px;
+    object-fit: cover;
+    display: block;
+    border: 1px solid rgba(255,255,255,.13);
+    background: linear-gradient(135deg, var(--oldora-cyan), #a8fff8 55%, var(--oldora-blue));
+    box-shadow: 0 10px 25px rgba(66, 232, 224, .25);
+}
+
+.oldora-brand-mark {
+    display: grid;
+    place-items: center;
+    color: #041018;
+    font-size: 18px;
+    font-weight: 900;
+}
+
+.oldora-balance-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 2px 2px 16px;
+    padding: 14px 15px;
+    color: #fff !important;
+    border: 1px solid rgba(66, 232, 224, .18);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(66, 232, 224, .12), rgba(100, 135, 255, .09));
+    text-decoration: none !important;
+}
+
+.oldora-balance-card span {
+    display: grid;
+    gap: 2px;
+}
+
+.oldora-balance-card small {
+    color: #a9b6c9;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+
+.oldora-balance-card strong {
+    font-size: 23px;
+    line-height: 1.1;
+}
+
+.oldora-balance-card > i {
+    color: var(--oldora-cyan);
+}
+
+.oldora-menu-links {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 2px 14px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, .15) transparent;
+}
+
+.oldora-menu-links::-webkit-scrollbar {
+    width: 5px;
+}
+
+.oldora-menu-links::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(255,255,255,.15);
+}
+
+.oldora-menu-label {
+    margin: 15px 11px 7px;
+    color: #6f7a91;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+}
+
+.oldora-menu-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    margin: 3px 0;
+    padding: 10px 11px;
+    color: #aab2c4 !important;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    border-radius: 13px;
+    text-decoration: none !important;
+    transition: color .18s ease, background .18s ease, transform .18s ease, border-color .18s ease;
+}
+
+.oldora-menu-link > i {
+    width: 20px;
+    color: #778198;
+    font-size: 15px;
+    text-align: center;
+    transition: color .18s ease;
+}
+
+.oldora-menu-link:hover {
+    color: #fff !important;
+    background: rgba(255, 255, 255, .055);
+    transform: translateX(2px);
+}
+
+.oldora-menu-link:hover > i,
+.oldora-menu-link.oldora-menu-active > i {
+    color: var(--oldora-cyan);
+}
+
+.oldora-menu-link.oldora-menu-active {
+    color: #fff !important;
+    border-color: rgba(66, 232, 224, .16);
+    background: linear-gradient(90deg, rgba(66, 232, 224, .13), rgba(100, 135, 255, .07));
+    box-shadow: inset 3px 0 0 var(--oldora-cyan);
+}
+
+.oldora-menu-link[href*="youtube-watcher"] > i {
+    color: #ff5668;
+}
+
+.oldora-menu-badge {
+    margin-left: auto;
+    padding: 3px 7px;
+    color: #061017;
+    font-size: 9px;
+    font-weight: 900;
+    border-radius: 999px;
+    background: var(--oldora-cyan);
+}
+
+.oldora-menu-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 9px 2px;
+    border-top: 1px solid var(--oldora-nav-border);
+}
+
+.oldora-menu-avatar {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    font-weight: 800;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(100, 135, 255, .85), rgba(166, 108, 255, .85));
+}
+
+.oldora-menu-user > span:nth-child(2) {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+}
+
+.oldora-menu-user strong {
+    overflow: hidden;
+    color: #fff;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oldora-menu-user small {
+    color: var(--oldora-nav-muted);
+    font-size: 10px;
+}
+
+.oldora-menu-user > a,
+.oldora-menu-icon {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    color: #aab2c4 !important;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, .04);
+    text-decoration: none !important;
+}
+
+.oldora-menu-close,
+.oldora-mobile-header,
+.oldora-menu-overlay {
+    display: none;
+}
+
+.oldora-shared-shell .sidebar:not(.oldora-menu-sidebar),
+.oldora-shared-shell .sidebar-fixed,
+.oldora-shared-shell #mainSidebar,
+.oldora-shared-shell #sidebar,
+.oldora-shared-shell .mobile-nav,
+.oldora-shared-shell .mobile-topbar,
+.oldora-shared-shell .mobile-header,
+.oldora-shared-shell .container-fluid > .row > .sidebar-container {
+    display: none !important;
+}
+
+.oldora-shared-shell .container-fluid > .row > [class*="col-lg-10"],
+.oldora-shared-shell .container-fluid > .row > [class*="col-md-10"] {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+}
+
+.oldora-shared-shell .main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
+}
+
+.oldora-shared-shell .app-shell {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding-left: 0 !important;
+}
+
+.oldora-shared-shell .app-shell > .content {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+@media (max-width: 991.98px) {
+    body.oldora-shared-shell {
+        padding-left: 0 !important;
+        padding-top: 66px !important;
+    }
+
+    .oldora-mobile-header {
+        position: fixed;
+        inset: 0 0 auto 0;
+        z-index: 10040;
+        height: 66px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px;
+        color: #fff;
+        border-bottom: 1px solid rgba(255, 255, 255, .09);
+        background: rgba(5, 9, 20, .88);
+        backdrop-filter: blur(22px);
+        -webkit-backdrop-filter: blur(22px);
+        font-family: Inter, Cairo, system-ui, sans-serif;
+    }
+
+    .oldora-mobile-header .oldora-brand-mark,
+    .oldora-mobile-header .oldora-brand-logo {
+        width: 34px;
+        height: 34px;
+        flex-basis: 34px;
+        border-radius: 10px;
+        font-size: 15px;
+    }
+
+    .oldora-credit-pill {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 36px;
+        padding: 0 11px;
+        color: #fff !important;
+        border: 1px solid rgba(66, 232, 224, .18);
+        border-radius: 999px;
+        background: rgba(66, 232, 224, .08);
+        text-decoration: none !important;
+        font-size: 12px;
+        font-weight: 800;
+    }
+
+    .oldora-credit-pill i {
+        color: #ffd166;
+    }
+
+    .oldora-menu-sidebar {
+        width: min(88vw, 310px);
+        transform: translateX(-105%);
+        transition: transform .24s ease;
+    }
+
+    .oldora-menu-open .oldora-menu-sidebar {
+        transform: translateX(0);
+    }
+
+    .oldora-menu-close {
+        display: grid;
+    }
+
+    .oldora-menu-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10045;
+        display: block;
+        pointer-events: none;
+        opacity: 0;
+        background: rgba(0, 0, 0, .67);
+        backdrop-filter: blur(3px);
+        transition: opacity .24s ease;
+    }
+
+    .oldora-menu-open .oldora-menu-overlay {
+        pointer-events: auto;
+        opacity: 1;
+    }
+}

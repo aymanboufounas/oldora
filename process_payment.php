@@ -28,28 +28,14 @@ if (!oldora_verify_csrf($_POST['csrf_token'] ?? '')) {
     exit;
 }
 
-$plans = [
-    'basic' => ['amount' => '29.00', 'credits' => 70],
-    'pro' => ['amount' => '59.00', 'credits' => 200],
-    'elite' => ['amount' => '159.00', 'credits' => 500],
-    'elite_yearly' => ['amount' => '999.00', 'credits' => 4000]
-];
-
-$plan = strtolower(trim((string) ($_POST['plan_type'] ?? '')));
-if (isset($plans[$plan])) {
-    $amount = $plans[$plan]['amount'];
-    $credits = $plans[$plan]['credits'];
-} elseif ($plan === 'custom') {
-    $custom = round((float) ($_POST['price'] ?? 0), 2);
-    if ($custom < 0.70 || $custom > 10000) {
-        $_SESSION['payment_error'] = 'Custom payments must be between $0.70 and $10,000.';
-        header('Location: planing.php');
-        exit;
-    }
-    $amount = number_format($custom, 2, '.', '');
-    $credits = (int) floor($custom / 0.70);
-} else {
-    $_SESSION['payment_error'] = 'Invalid plan selected.';
+$planValue = $_POST['plan_type'] ?? '';
+$plan = is_string($planValue) ? strtolower(trim($planValue)) : '';
+try {
+    $quote = oldora_payment_quote($plan, $_POST['price'] ?? '');
+    $amount = $quote['amount'];
+    $credits = $quote['credits'];
+} catch (RuntimeException $error) {
+    $_SESSION['payment_error'] = $error->getMessage();
     header('Location: planing.php');
     exit;
 }
@@ -72,13 +58,14 @@ $orderId = 'OLD-' . gmdate('ymdHis') . '-' . bin2hex(random_bytes(5));
 $status = 'creating';
 $userId = (int) $user['id'];
 $email = (string) $user['email'];
-$amountFloat = (float) $amount;
-
 $insert = $con->prepare('INSERT INTO invoices (user_id, user_email, plan_name, credits, amount_usd, order_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)');
-$insert->bind_param('issidss', $userId, $email, $plan, $credits, $amountFloat, $orderId, $status);
+$insert->bind_param('ississs', $userId, $email, $plan, $credits, $amount, $orderId, $status);
 $insert->execute();
 $invoiceId = $insert->insert_id;
 $insert->close();
+$_SESSION['last_payment_order'] = $orderId;
+// Provider latency must not hold the customer's session lock or hide fresh balances.
+session_write_close();
 
 try {
     $baseUrl = oldora_base_url();
@@ -97,32 +84,38 @@ try {
 
     $response = oldora_cryptomus_request('/v1/payment', $request);
     $provider = $response['result'] ?? [];
-    if (empty($provider['url'])) {
+    if (!is_array($provider) || empty($provider['url']) || !is_string($provider['url']) ||
+        filter_var($provider['url'], FILTER_VALIDATE_URL) === false || parse_url($provider['url'], PHP_URL_SCHEME) !== 'https') {
         throw new RuntimeException('Payment link was not returned.');
     }
+    oldora_payment_validate_provider(['order_id' => $orderId, 'amount_usd' => $amount], $provider);
 
     $providerUuid = (string) ($provider['uuid'] ?? '');
     $paymentUrl = (string) $provider['url'];
     $providerStatus = (string) ($provider['payment_status'] ?? $provider['status'] ?? 'check');
     $payload = json_encode($provider, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-    $update = $con->prepare("UPDATE invoices SET status = 'pending', provider_uuid = ?, payment_url = ?, provider_status = ?, provider_payload = ? WHERE id = ?");
+    $update = $con->prepare("UPDATE invoices SET status = 'pending', provider_uuid = ?, payment_url = ?, provider_status = ?, provider_payload = ?, next_check_at = UTC_TIMESTAMP() WHERE id = ? AND status <> 'paid'");
     $update->bind_param('ssssi', $providerUuid, $paymentUrl, $providerStatus, $payload, $invoiceId);
     $update->execute();
     $update->close();
 
-    $_SESSION['last_payment_order'] = $orderId;
+    if (in_array($providerStatus, ['paid', 'paid_over'], true)) {
+        oldora_apply_paid_invoice($con, $orderId, $provider);
+        header('Location: success.php?order_id=' . rawurlencode($orderId), true, 303);
+        exit;
+    }
     header('Location: ' . $paymentUrl, true, 303);
     exit;
 } catch (Throwable $error) {
-    $safeError = mb_substr($error->getMessage(), 0, 500);
-    $failed = $con->prepare("UPDATE invoices SET status = 'create_failed', last_error = ? WHERE id = ?");
+    $safeError = function_exists('mb_substr') ? mb_substr($error->getMessage(), 0, 500, 'UTF-8') : substr($error->getMessage(), 0, 500);
+    $failed = $con->prepare("UPDATE invoices SET status = 'create_failed', last_error = ?, next_check_at = UTC_TIMESTAMP() WHERE id = ? AND status <> 'paid'");
     $failed->bind_param('si', $safeError, $invoiceId);
     $failed->execute();
     $failed->close();
     oldora_log('payments', 'Invoice creation failed', ['order_id' => $orderId, 'error' => $safeError]);
+    if (session_status() !== PHP_SESSION_ACTIVE) session_start();
     $_SESSION['payment_error'] = 'Could not create the payment. Please try again or contact support.';
     header('Location: planing.php');
     exit;
 }
-

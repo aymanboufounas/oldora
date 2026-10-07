@@ -42,7 +42,7 @@ if ($stmt) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upgrade Plan | Oldora</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap-4.5.2.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="https://i.postimg.cc/bv1QQwBc/1768055586557.png">
@@ -182,7 +182,7 @@ if ($stmt) {
         <i class="fa-solid fa-bars"></i>
     </button>
     <h4 class="m-0"><i class="fa-solid fa-crown text-neon"></i> PLANS</h4>
-    <div class="text-white small">Credits: <span class="text-neon font-weight-bold"><?php echo $current_credits; ?></span></div>
+    <div class="text-white small">Credits: <span class="text-neon font-weight-bold" data-oldora-balance data-oldora-balance-value="<?php echo (int)$current_credits; ?>"><?php echo (int)$current_credits; ?></span></div>
 </div>
 
 <div class="container-fluid">
@@ -223,7 +223,7 @@ if ($stmt) {
                 <h2>Choose Your Power</h2>
                 <p class="text-white-50">Standard Rate: <span class="text-white font-weight-bold">$0.70</span> / Credit</p>
                 <div class="text-right d-block d-md-none text-neon font-weight-bold">
-                    You have: <?php echo $current_credits; ?> Credits
+                    You have: <span data-oldora-balance data-oldora-balance-value="<?php echo (int)$current_credits; ?>"><?php echo (int)$current_credits; ?></span> Credits
                 </div>
             </div>
 
@@ -362,8 +362,8 @@ if ($stmt) {
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/vendor/jquery/jquery-3.5.1.min.js"></script>
+<script src="assets/vendor/bootstrap/bootstrap-4.5.2.bundle.min.js"></script>
 
 <script>
 $(document).ready(function() {

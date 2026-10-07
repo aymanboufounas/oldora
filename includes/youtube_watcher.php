@@ -267,11 +267,12 @@ if (!function_exists('oldora_process_youtube_watcher')) {
     function oldora_process_youtube_watcher($con, array $watcher)
     {
         $accessToken = '';
-        $tokenStmt = $con->prepare('SELECT * FROM user_tokens WHERE id = ? LIMIT 1');
-        $tokenStmt->bind_param('i', $watcher['destination_token_id']);
+        $tokenStmt = $con->prepare("SELECT t.* FROM user_tokens t INNER JOIN users u ON u.email = t.user_email WHERE t.id = ? AND u.id = ? AND t.platform = 'youtube' LIMIT 1");
+        $tokenStmt->bind_param('ii', $watcher['destination_token_id'], $watcher['user_id']);
         $tokenStmt->execute();
         $apiAccount = $tokenStmt->get_result()->fetch_assoc();
         $tokenStmt->close();
+        if (!$apiAccount) throw new RuntimeException('Reconnect your destination YouTube account before running this watcher.');
         if ($apiAccount) {
             $accessToken = function_exists('oldora_refresh_youtube_token')
                 ? oldora_refresh_youtube_token($con, $apiAccount)
@@ -359,56 +360,100 @@ if (!function_exists('oldora_process_youtube_watcher')) {
             throw $error;
         }
 
+        $generationSaved = false;
+        $startTransaction = false;
         try {
+            $scheduledAt = oldora_watcher_best_time($watcher['timezone'], $watcher['smart_times_json']);
             $video = oldora_start_video($package['video_prompt'], $provider);
             $remoteStatus = (string) ($video['status'] ?? 'queued');
             if (!in_array($remoteStatus, ['queued', 'in_progress'], true)) {
                 $remoteStatus = 'processing';
             }
-            $jobId = (string) $video['id'];
-            $progress = (int) ($video['progress'] ?? 0);
-            $update = $con->prepare('UPDATE content_items SET status = ?, provider_job_id = ?, progress = ? WHERE id = ?');
+            $jobId = (string) ($video['id'] ?? '');
+            if ($jobId === '') throw new RuntimeException('Video provider returned no generation receipt.');
+            $progress = max(0, min(100, (int) ($video['progress'] ?? 0)));
+            $con->begin_transaction();
+            $startTransaction = true;
+            $update = $con->prepare("UPDATE content_items SET status = ?, provider_job_id = ?, progress = ? WHERE id = ? AND status = 'starting' AND provider_job_id IS NULL");
             $update->bind_param('ssii', $remoteStatus, $jobId, $progress, $contentId);
             $update->execute();
+            if ($update->affected_rows !== 1) throw new RuntimeException('Generation start was already recovered or completed.');
             $update->close();
 
-            $scheduledAt = oldora_watcher_best_time($watcher['timezone'], $watcher['smart_times_json']);
             $platform = 'youtube';
             $queueStatus = 'waiting_media';
             $queue = $con->prepare('INSERT IGNORE INTO publish_jobs (content_id, user_id, token_id, platform, status, scheduled_at, privacy_level) VALUES (?, ?, ?, ?, ?, ?, ?)');
             $queue->bind_param('iiissss', $contentId, $watcher['user_id'], $watcher['destination_token_id'], $platform, $queueStatus, $scheduledAt, $watcher['privacy_level']);
             $queue->execute();
             $queue->close();
+            $eventDone = $con->prepare("UPDATE youtube_watcher_events SET status = 'generated', error_message = NULL WHERE id = ?");
+            $eventDone->bind_param('i', $eventId);
+            $eventDone->execute();
+            $eventDone->close();
+            $con->commit();
+            $startTransaction = false;
+            $generationSaved = true;
 
             $published = $latest['published_at'] !== '' ? gmdate('Y-m-d H:i:s', strtotime($latest['published_at'])) : null;
             $done = $con->prepare("UPDATE youtube_watchers SET last_video_id = ?, last_video_published_at = ?, last_checked_at = UTC_TIMESTAMP(), last_error = NULL WHERE id = ?");
             $done->bind_param('ssi', $latest['id'], $published, $watcher['id']);
             $done->execute();
             $done->close();
-            $eventDone = $con->prepare("UPDATE youtube_watcher_events SET status = 'generated' WHERE id = ?");
-            $eventDone->bind_param('i', $eventId);
-            $eventDone->execute();
-            $eventDone->close();
             return 'created';
         } catch (Throwable $error) {
             $message = function_exists('mb_substr') ? mb_substr($error->getMessage(), 0, 1000, 'UTF-8') : substr($error->getMessage(), 0, 1000);
+            if ($startTransaction) $con->rollback();
+            if ($generationSaved) {
+                oldora_log('youtube-watcher', 'Watcher metadata update failed after saving generation', ['watcher_id' => $watcher['id'], 'content_id' => $contentId, 'error' => $message]);
+                try {
+                    $eventError = $con->prepare("UPDATE youtube_watcher_events SET error_message = ? WHERE id = ? AND status = 'generated'");
+                    $eventError->bind_param('si', $message, $eventId);
+                    $eventError->execute();
+                    $eventError->close();
+                    $watcherError = $con->prepare('UPDATE youtube_watchers SET last_checked_at = UTC_TIMESTAMP(), last_error = ? WHERE id = ?');
+                    $watcherError->bind_param('si', $message, $watcher['id']);
+                    $watcherError->execute();
+                    $watcherError->close();
+                } catch (Throwable $metadataError) {
+                    oldora_log('youtube-watcher', 'Could not save watcher metadata error', ['content_id' => $contentId, 'error' => $metadataError->getMessage()]);
+                }
+                return 'created';
+            }
             $con->begin_transaction();
             try {
-                $failed = $con->prepare("UPDATE content_items SET status = 'failed', error_message = ? WHERE id = ?");
-                $failed->bind_param('si', $message, $contentId);
-                $failed->execute();
-                $failed->close();
-                $refund = $con->prepare('UPDATE users SET credits = credits + ? WHERE id = ?');
-                $refund->bind_param('ii', $creditCost, $watcher['user_id']);
-                $refund->execute();
-                $refund->close();
-                $eventFailed = $con->prepare("UPDATE youtube_watcher_events SET status = 'failed', error_message = ? WHERE id = ?");
-                $eventFailed->bind_param('si', $message, $eventId);
+                $current = $con->prepare('SELECT status, provider_job_id FROM content_items WHERE id = ? FOR UPDATE');
+                $current->bind_param('i', $contentId);
+                $current->execute();
+                $saved = $current->get_result()->fetch_assoc();
+                $current->close();
+                $durableGeneration = $saved && !empty($saved['provider_job_id']) && in_array($saved['status'], ['queued', 'processing', 'in_progress', 'ready'], true);
+                if ($saved && $saved['status'] === 'starting' && $saved['provider_job_id'] === null) {
+                    $failed = $con->prepare("UPDATE content_items SET status = 'failed', error_message = ? WHERE id = ? AND status = 'starting' AND provider_job_id IS NULL");
+                    $failed->bind_param('si', $message, $contentId);
+                    $failed->execute();
+                    $refundNeeded = $failed->affected_rows === 1;
+                    $failed->close();
+                    if ($refundNeeded) {
+                        $refund = $con->prepare('UPDATE users SET credits = credits + ? WHERE id = ?');
+                        $refund->bind_param('ii', $creditCost, $watcher['user_id']);
+                        $refund->execute();
+                        if ($refund->affected_rows !== 1) throw new RuntimeException('Could not refund the failed watcher start.');
+                        $refund->close();
+                    }
+                }
+                $eventState = $durableGeneration ? 'generated' : 'failed';
+                $eventFailed = $con->prepare('UPDATE youtube_watcher_events SET status = ?, error_message = ? WHERE id = ?');
+                $eventFailed->bind_param('ssi', $eventState, $message, $eventId);
                 $eventFailed->execute();
                 $eventFailed->close();
                 $con->commit();
+                if ($durableGeneration) {
+                    oldora_log('youtube-watcher', 'Watcher generation was saved before an interrupted update', ['watcher_id' => $watcher['id'], 'content_id' => $contentId, 'error' => $message]);
+                    return 'created';
+                }
             } catch (Throwable $refundError) {
                 $con->rollback();
+                oldora_log('youtube-watcher', 'Watcher failure recovery failed', ['content_id' => $contentId, 'error' => $refundError->getMessage()]);
             }
             throw $error;
         }

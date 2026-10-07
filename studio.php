@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/connection.php';
 require_once __DIR__ . '/includes/content.php';
+require_once __DIR__ . '/includes/content_options.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -75,6 +76,22 @@ $recentStmt->close();
 $requestedType = ($_GET['type'] ?? '') === 'image'
     ? 'image'
     : 'video';
+$creationChoices = oldora_content_option_choices();
+$creationDefaults = oldora_content_options([], $requestedType);
+$imageCost = max(1, (int) oldora_env('IMAGE_CREDIT_COST', '1'));
+$videoCost = max(1, (int) oldora_env('VIDEO_CREDIT_COST', '5'));
+try {
+    $studioVideoProvider = oldora_video_provider();
+} catch (RuntimeException $ignored) {
+    $studioVideoProvider = 'unavailable';
+}
+function oldora_studio_options(string $key): void
+{
+    global $creationChoices, $creationDefaults;
+    foreach ($creationChoices[$key] as $value => $label) {
+        echo '<option value="' . htmlspecialchars($value, ENT_QUOTES, 'UTF-8') . '"' . ($creationDefaults[$key] === $value ? ' selected' : '') . '>' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</option>';
+    }
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -87,8 +104,8 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
     <title>Content Studio | OLDORA</title>
 
     <link rel="icon"
-          href="Logo.png"
-          type="image/png">
+          href="assets/oldora-mark.svg"
+          type="image/svg+xml">
 
     <link rel="preconnect"
           href="https://fonts.googleapis.com">
@@ -1111,6 +1128,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
             }
         }
     </style>
+    <link rel="stylesheet" href="assets/studio-quality.css">
 </head>
 <body>
 <main class="studio">
@@ -1121,7 +1139,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
                 AI production workspace
             </div>
 
-            <h1>Create once. Publish everywhere.</h1>
+            <h1>Your idea. Ready for the feed.</h1>
 
             <p class="subtitle">
                 Generate a social image or short video, then publish
@@ -1144,7 +1162,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
 
     <div class="layout">
         <section class="panel composer">
-            <form id="studioForm">
+            <form id="studioForm" data-user-id="<?php echo $userId; ?>" data-video-provider="<?php echo htmlspecialchars($studioVideoProvider, ENT_QUOTES, 'UTF-8'); ?>" data-image-cost="<?php echo $imageCost; ?>" data-video-cost="<?php echo $videoCost; ?>">
                 <input type="hidden"
                        name="csrf_token"
                        value="<?php echo htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>">
@@ -1167,7 +1185,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
 
                             <span>
                                 <strong>AI video</strong>
-                                <small>5 credits · vertical short</small>
+                                <small><?php echo $videoCost; ?> credits · vertical short</small>
                             </span>
                         </label>
                     </div>
@@ -1184,7 +1202,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
 
                             <span>
                                 <strong>AI image</strong>
-                                <small>1 credit · portrait post</small>
+                                <small><?php echo $imageCost; ?> credit<?php echo $imageCost === 1 ? '' : 's'; ?> · social image</small>
                             </span>
                         </label>
                     </div>
@@ -1192,19 +1210,52 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
 
                 <div class="field">
                     <label for="prompt">
-                        Describe the content
+                        1. Start with your idea
                     </label>
 
                     <textarea id="prompt"
                               name="prompt"
+                              dir="auto"
                               maxlength="4000"
                               required
-                              placeholder="Example: Cinematic portrait video of a freelance developer building a business at night, teal light, slow camera push, premium commercial look..."></textarea>
+                              placeholder="Describe the topic, the main subject, what the audience should learn, and any details that matter..."></textarea>
 
                     <span class="counter">
                         <span id="promptCount">0</span>/4000
                     </span>
                 </div>
+
+                <div class="brief-starters" aria-label="Example creative briefs">
+                    <span>Try a starting point</span>
+                    <button type="button" data-brief="education">Teach an idea</button>
+                    <button type="button" data-brief="product">Show a product</button>
+                    <button type="button" data-brief="story">Tell a story</button>
+                </div>
+
+                <section class="creative-settings" aria-labelledby="creativeDirectionTitle">
+                    <div class="settings-heading">
+                        <h2 id="creativeDirectionTitle">2. Set the creative direction</h2>
+                        <p>A clearer brief helps keep the visuals and narration consistent.</p>
+                    </div>
+                    <div class="creative-grid">
+                        <div class="field"><label for="contentLanguage">Content language</label><select name="language" id="contentLanguage"><?php oldora_studio_options('language'); ?></select></div>
+                        <div class="field"><label for="contentTone">Tone</label><select name="tone" id="contentTone"><?php oldora_studio_options('tone'); ?></select></div>
+                        <div class="field"><label for="visualStyle">Visual direction</label><select name="visual_style" id="visualStyle"><?php oldora_studio_options('visual_style'); ?></select></div>
+                        <div class="field" data-image-setting><label for="imageAspect">Image format</label><select name="image_aspect" id="imageAspect"><?php oldora_studio_options('image_aspect'); ?></select></div>
+                        <div class="field"><label for="contentAudience">Audience <span class="optional-label">optional</span></label><input type="text" name="audience" id="contentAudience" dir="auto" maxlength="160" placeholder="For example, first-time business owners"></div>
+                        <div class="field"><label for="brandColor">Accent color <span class="optional-label">optional</span></label><div class="color-setting"><input type="color" id="brandColor" value="#42e8e0" aria-label="Choose an accent color"><label><input type="checkbox" id="useBrandColor"> Use this color</label><input type="hidden" name="brand_color" id="brandColorValue" value=""></div></div>
+                    </div>
+                    <p class="settings-hint" id="formatHint" hidden>Square and landscape images can publish to Instagram. Portrait 2:3 is for download.</p>
+                    <div class="voice-settings" data-video-setting>
+                        <div class="settings-heading"><h3>Voice & captions</h3><p id="voiceHint">Narration voices follow your selected language. Video length follows the generated script.</p></div>
+                        <div class="creative-grid" id="voiceControls">
+                            <div class="field"><label for="contentVoice">Narrator</label><select name="voice" id="contentVoice"><?php oldora_studio_options('voice'); ?></select></div>
+                            <div class="field"><label for="voicePace">Speaking pace</label><select name="voice_pace" id="voicePace"><?php oldora_studio_options('voice_pace'); ?></select></div>
+                            <div class="field"><label for="subtitleStyle">Subtitles</label><select name="subtitle_style" id="subtitleStyle"><?php oldora_studio_options('subtitle_style'); ?></select></div>
+                            <div class="field"><label for="contentMusic">Background audio</label><select name="music" id="contentMusic"><?php oldora_studio_options('music'); ?></select></div>
+                        </div>
+                    </div>
+                </section>
 
                 <div class="field">
                     <label for="caption">
@@ -1214,6 +1265,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
                     <textarea class="caption"
                               id="caption"
                               name="caption"
+                              dir="auto"
                               maxlength="2200"
                               placeholder="Write the caption that will be published with this content..."></textarea>
 
@@ -1224,7 +1276,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
 
                 <div class="field">
                     <span class="section-label">
-                        Publish to linked accounts
+                        3. Choose where to publish
                     </span>
 
                     <?php if ($accounts): ?>
@@ -1344,6 +1396,16 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
                     </div>
                 </div>
 
+                <div class="field" id="youtubeVisibilityField" hidden>
+                    <label for="youtubeVisibility">YouTube visibility</label>
+                    <select name="youtube_privacy" id="youtubeVisibility">
+                        <option value="private">Private · only you</option>
+                        <option value="unlisted">Unlisted · anyone with the link</option>
+                        <option value="public">Public</option>
+                    </select>
+                    <span class="counter">Applies to the selected YouTube channels.</span>
+                </div>
+
                 <label class="check-row">
                     <input type="checkbox"
                            name="publish_consent"
@@ -1358,7 +1420,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
                 </label>
 
                 <div class="message"
-                     id="formMessage"></div>
+                     id="formMessage" role="status" aria-live="polite"></div>
 
                 <button class="submit"
                         id="createButton"
@@ -1368,6 +1430,8 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
 
                     <i class="fa-solid fa-arrow-right"></i>
                 </button>
+                <p class="generation-summary" id="generationSummary"></p>
+                <p class="draft-status" id="draftStatus" role="status"></p>
             </form>
         </section>
 
@@ -1376,7 +1440,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
                 <strong>Live result</strong>
 
                 <span class="status"
-                      id="previewStatus">
+                      id="previewStatus" aria-live="polite">
                     Ready
                 </span>
             </div>
@@ -1387,7 +1451,7 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
                 <div class="placeholder"
                      id="placeholder">
 
-                    <i class="fa-solid fa-sparkles"></i>
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
 
                     <strong>
                         Your creation appears here
@@ -1407,11 +1471,12 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
                     </div>
 
                     <div class="progress-text"
-                         id="progressText">
+                         id="progressText" role="status" aria-live="polite">
                         Starting generation...
                     </div>
                 </div>
             </div>
+            <div class="result-actions" id="resultActions" hidden><a id="downloadAsset" href="#" target="_blank" rel="noopener" hidden>Open original</a><button type="button" id="checkStatus" hidden>Check status again</button><button type="button" id="startAnother" hidden>Create another</button></div>
         </aside>
     </div>
 
@@ -1489,281 +1554,6 @@ $requestedType = ($_GET['type'] ?? '') === 'image'
     </section>
 </main>
 
-<script>
-(function () {
-    const form = document.getElementById("studioForm");
-    const prompt = document.getElementById("prompt");
-    const caption = document.getElementById("caption");
-    const button = document.getElementById("createButton");
-    const message = document.getElementById("formMessage");
-    const placeholder = document.getElementById("placeholder");
-    const progressWrap = document.getElementById("progressWrap");
-    const progressFill = document.getElementById("progressFill");
-    const progressText = document.getElementById("progressText");
-    const previewStatus = document.getElementById("previewStatus");
-    const stage = document.getElementById("previewStage");
-
-    try {
-        document.getElementById("timezone").value =
-            Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    } catch (error) {
-        document.getElementById("timezone").value = "UTC";
-    }
-
-    const draftPrompt =
-        sessionStorage.getItem("oldora_draft_prompt");
-
-    const draftCaption =
-        sessionStorage.getItem("oldora_draft_caption");
-
-    if (draftPrompt) {
-        prompt.value = draftPrompt;
-        sessionStorage.removeItem("oldora_draft_prompt");
-    }
-
-    if (draftCaption) {
-        caption.value = draftCaption;
-        sessionStorage.removeItem("oldora_draft_caption");
-    }
-
-    function updateCounts() {
-        document.getElementById("promptCount").textContent =
-            prompt.value.length;
-
-        document.getElementById("captionCount").textContent =
-            caption.value.length;
-    }
-
-    prompt.addEventListener("input", updateCounts);
-    caption.addEventListener("input", updateCounts);
-    updateCounts();
-
-    function mediaType() {
-        return form.querySelector(
-            'input[name="media_type"]:checked'
-        ).value;
-    }
-
-    function syncAccounts() {
-        const image = mediaType() === "image";
-
-        document.querySelectorAll(".account").forEach(function (card) {
-            const blocked =
-                image && card.dataset.platform !== "instagram";
-
-            card.classList.toggle("disabled", blocked);
-
-            if (blocked) {
-                card.querySelector("input").checked = false;
-            }
-        });
-    }
-
-    form.querySelectorAll(
-        'input[name="media_type"]'
-    ).forEach(function (input) {
-        input.addEventListener("change", syncAccounts);
-    });
-
-    syncAccounts();
-
-    function selectedAccounts() {
-        return form.querySelectorAll(
-            'input[name="token_ids[]"]:checked'
-        ).length;
-    }
-
-    function setMessage(text, type) {
-        message.textContent = text;
-        message.className = "message " + type;
-    }
-
-    function setBusy(busy) {
-        button.disabled = busy;
-
-        button.querySelector("span").textContent =
-            busy ? "Creating..." : "Create content";
-    }
-
-    function showProgress(percent, text) {
-        placeholder.style.display = "none";
-        progressWrap.style.display = "block";
-        progressFill.style.width =
-            Math.max(6, percent || 0) + "%";
-        progressText.textContent = text;
-        previewStatus.textContent =
-            (percent || 0) + "%";
-    }
-
-    function showAsset(type, url) {
-        progressWrap.style.display = "none";
-        placeholder.style.display = "none";
-
-        stage.querySelectorAll("img,video").forEach(function (node) {
-            node.remove();
-        });
-
-        const element = document.createElement(
-            type === "image" ? "img" : "video"
-        );
-
-        element.src = url;
-
-        if (type === "video") {
-            element.controls = true;
-            element.autoplay = false;
-        }
-
-        stage.appendChild(element);
-        previewStatus.textContent = "Ready";
-    }
-
-    function poll(contentId) {
-        fetch(
-            "content-status.php?id=" +
-            encodeURIComponent(contentId),
-            {
-                credentials: "same-origin",
-                cache: "no-store"
-            }
-        )
-        .then(function (response) {
-            return response.json();
-        })
-        .then(function (data) {
-            if (!data.ok) {
-                throw new Error(
-                    data.message || "Status failed"
-                );
-            }
-
-            const content = data.content;
-
-            if (
-                content.status === "ready" &&
-                content.asset_url
-            ) {
-                showAsset(
-                    content.media_type,
-                    content.asset_url
-                );
-
-                setMessage(
-                    "Content is ready. Publishing jobs will run at their scheduled time.",
-                    "success"
-                );
-
-                setBusy(false);
-                return;
-            }
-
-            if (content.status === "failed") {
-                setMessage(
-                    content.error_message ||
-                    "Generation failed. Your credits were refunded.",
-                    "error"
-                );
-
-                progressWrap.style.display = "none";
-                placeholder.style.display = "block";
-                previewStatus.textContent = "Failed";
-                setBusy(false);
-                return;
-            }
-
-            showProgress(
-                content.progress || 8,
-                "Rendering video... " +
-                (content.progress || 0) +
-                "%"
-            );
-
-            setTimeout(function () {
-                poll(contentId);
-            }, 12000);
-        })
-        .catch(function () {
-            setTimeout(function () {
-                poll(contentId);
-            }, 16000);
-        });
-    }
-
-    form.addEventListener("submit", function (event) {
-        event.preventDefault();
-        message.className = "message";
-
-        if (
-            selectedAccounts() > 0 &&
-            !document.getElementById("publishConsent").checked
-        ) {
-            setMessage(
-                "Confirm publishing consent for the selected accounts.",
-                "error"
-            );
-
-            return;
-        }
-
-        setBusy(true);
-
-        showProgress(
-            8,
-            "Sending your request to the AI model..."
-        );
-
-        const formData = new FormData(form);
-
-        fetch("content-create.php", {
-            method: "POST",
-            body: formData,
-            credentials: "same-origin"
-        })
-        .then(function (response) {
-            return response.json().then(function (json) {
-                if (!response.ok || !json.ok) {
-                    throw new Error(
-                        json.message || "Creation failed"
-                    );
-                }
-
-                return json;
-            });
-        })
-        .then(function (result) {
-            const credits =
-                document.getElementById("creditCount");
-
-            credits.textContent = Math.max(
-                0,
-                parseInt(credits.textContent || "0", 10) -
-                result.credits_used
-            );
-
-            if (result.status === "ready") {
-                showAsset("image", result.asset_url);
-                setMessage(result.message, "success");
-                setBusy(false);
-            } else {
-                setMessage(result.message, "success");
-
-                showProgress(
-                    10,
-                    "Video queued. Rendering can take several minutes."
-                );
-
-                poll(result.content_id);
-            }
-        })
-        .catch(function (error) {
-            setMessage(error.message, "error");
-            progressWrap.style.display = "none";
-            placeholder.style.display = "block";
-            previewStatus.textContent = "Ready";
-            setBusy(false);
-        });
-    });
-})();
-</script>
+<script src="assets/studio-quality.js" defer></script>
 </body>
 </html>

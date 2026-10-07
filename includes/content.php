@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/env.php';
 require_once __DIR__ . '/accounts.php';
+require_once __DIR__ . '/content_options.php';
 require_once __DIR__ . '/moneyprinter.php';
 
 if (!function_exists('oldora_ensure_content_schema')) {
@@ -14,6 +15,10 @@ if (!function_exists('oldora_ensure_content_schema')) {
             media_type VARCHAR(20) NOT NULL,
             prompt TEXT NOT NULL,
             caption TEXT NULL,
+            title VARCHAR(255) NULL,
+            description TEXT NULL,
+            source_url TEXT NULL,
+            generation_options TEXT NULL,
             status VARCHAR(30) NOT NULL DEFAULT 'starting',
             provider VARCHAR(40) NOT NULL DEFAULT 'openai',
             provider_job_id VARCHAR(150) NULL,
@@ -28,6 +33,21 @@ if (!function_exists('oldora_ensure_content_schema')) {
             KEY idx_content_user_created (user_id, created_at),
             KEY idx_content_provider_status (provider, status)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        foreach ([
+            'title' => 'VARCHAR(255) NULL',
+            'description' => 'TEXT NULL',
+            'source_url' => 'TEXT NULL',
+            'generation_options' => 'TEXT NULL'
+        ] as $column => $definition) {
+            if (!oldora_db_has_column($con, 'content_items', $column)) {
+                try {
+                    $con->query("ALTER TABLE content_items ADD COLUMN `{$column}` {$definition}");
+                } catch (mysqli_sql_exception $error) {
+                    if ($error->getCode() !== 1060 || !oldora_db_has_column($con, 'content_items', $column)) throw $error;
+                }
+            }
+        }
 
         $con->query("CREATE TABLE IF NOT EXISTS publish_jobs (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -56,8 +76,9 @@ if (!function_exists('oldora_openai_headers')) {
     function oldora_openai_headers($json = true)
     {
         $key = oldora_env('OPENAI_API_KEY');
+        if ($key === '') $key = oldora_env('VIDEO_LLM_KEY');
         if ($key === '') {
-            throw new RuntimeException('OPENAI_API_KEY is missing.');
+            throw new RuntimeException('An OpenAI API key is missing. Configure OPENAI_API_KEY or VIDEO_LLM_KEY.');
         }
         $headers = ['Authorization: Bearer ' . $key, 'Accept: application/json'];
         if ($json) {
@@ -90,16 +111,19 @@ if (!function_exists('oldora_api_error_message')) {
 }
 
 if (!function_exists('oldora_generate_image')) {
-    function oldora_generate_image($prompt, $userId)
+    function oldora_generate_image($prompt, $userId, array $options = [])
     {
         $payload = [
             'model' => oldora_env('OPENAI_IMAGE_MODEL', 'gpt-image-2'),
             'prompt' => $prompt,
             'n' => 1,
             'size' => oldora_env('OPENAI_IMAGE_SIZE', '1024x1536'),
-            'quality' => oldora_env('OPENAI_IMAGE_QUALITY', 'medium')
+            'quality' => oldora_env('OPENAI_IMAGE_QUALITY', 'medium'),
+            'output_format' => 'jpeg',
+            'output_compression' => 90
         ];
 
+        $payload = array_merge($payload, oldora_content_image_payload($prompt, $options));
         $ch = curl_init('https://api.openai.com/v1/images/generations');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -125,8 +149,12 @@ if (!function_exists('oldora_generate_image')) {
         if ($bytes === false || strlen($bytes) < 1000) {
             throw new RuntimeException('Image API returned no usable image.');
         }
+        $image = @getimagesizefromstring($bytes);
+        if (!$image || $image[2] !== IMAGETYPE_JPEG) {
+            throw new RuntimeException('Image API returned an unsupported image format. Please try again.');
+        }
 
-        $filename = 'image-' . (int) $userId . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(6)) . '.png';
+        $filename = 'image-' . (int) $userId . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(6)) . '.jpg';
         $path = oldora_generated_directory() . '/' . $filename;
         if (file_put_contents($path, $bytes, LOCK_EX) === false) {
             throw new RuntimeException('Could not save the generated image.');
@@ -136,16 +164,16 @@ if (!function_exists('oldora_generate_image')) {
 }
 
 if (!function_exists('oldora_start_video')) {
-    function oldora_start_video($prompt, $provider = null)
+    function oldora_start_video($prompt, $provider = null, array $options = [])
     {
         $provider = $provider ?? oldora_video_provider();
         if ($provider === 'moneyprinterturbo') {
-            return oldora_moneyprinter_start($prompt);
+            return oldora_moneyprinter_start($prompt, $options);
         }
         if ($provider !== 'openai') throw new RuntimeException('Unsupported video provider.');
         $fields = [
             'model' => oldora_env('OPENAI_VIDEO_MODEL', 'sora-2'),
-            'prompt' => $prompt,
+            'prompt' => oldora_content_prompt($prompt, 'video', $options),
             'size' => oldora_env('OPENAI_VIDEO_SIZE', '720x1280'),
             'seconds' => oldora_env('OPENAI_VIDEO_SECONDS', '8')
         ];
@@ -240,4 +268,3 @@ if (!function_exists('oldora_download_video')) {
         return ['path' => $path, 'url' => oldora_base_url() . '/uploads/generated/' . rawurlencode($filename)];
     }
 }
-

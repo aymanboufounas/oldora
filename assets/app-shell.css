@@ -386,3 +386,23 @@ body.oldora-shared-shell {
         opacity: 1;
     }
 }
+
+/* Shared interaction details across the workspace. */
+.oldora-shared-shell :is(a, button, input, select, textarea):focus-visible {
+    outline: 3px solid var(--oldora-cyan);
+    outline-offset: 3px;
+}
+.oldora-shared-shell :is(input, select, textarea) { accent-color: var(--oldora-cyan); }
+.oldora-menu-link[aria-current="page"] { color: #fff; }
+.oldora-balance-card [data-oldora-balance] { font-variant-numeric: tabular-nums; }
+.oldora-menu-icon { cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+.oldora-menu-icon:hover { border-color: rgba(66,232,224,.45); background: rgba(66,232,224,.1); }
+.oldora-shared-shell table { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+    .oldora-shared-shell *, .oldora-shared-shell *::before, .oldora-shared-shell *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}

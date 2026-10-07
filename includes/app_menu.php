@@ -58,7 +58,7 @@ if (!function_exists('oldora_menu_markup')) {
 
         $links = '';
         $links .= '<div class="oldora-menu-label">Workspace</div>';
-        $links .= oldora_menu_link($active, 'dashboard', 'home.php', 'fa-solid fa-grid-2', 'Dashboard');
+        $links .= oldora_menu_link($active, 'dashboard', 'home.php', 'fa-solid fa-table-columns', 'Dashboard');
         $links .= oldora_menu_link($active, 'studio', 'studio.php', 'fa-solid fa-wand-magic-sparkles', 'Content Studio', 'AI');
         $links .= oldora_menu_link($active, 'channel-watch', 'home.php#youtube-watcher', 'fa-brands fa-youtube', 'Channel Watch', 'Auto');
         $links .= oldora_menu_link($active, 'automation', 'automation.php', 'fa-solid fa-calendar-check', 'Automation');
@@ -72,16 +72,16 @@ if (!function_exists('oldora_menu_markup')) {
 
         return '<div class="oldora-menu-overlay" data-oldora-menu-close></div>
         <header class="oldora-mobile-header">
-            <button type="button" class="oldora-menu-icon" data-oldora-menu-open aria-label="Open menu"><i class="fa-solid fa-bars"></i></button>
-            <a class="oldora-mobile-brand" href="home.php"><img class="oldora-brand-logo" src="Logo.png" alt="OLDORA"><strong>OLDORA</strong></a>
-            <a class="oldora-credit-pill" href="planing.php"><i class="fa-solid fa-bolt"></i><span>' . $credits . '</span></a>
+            <button type="button" class="oldora-menu-icon" data-oldora-menu-open aria-label="Open menu" aria-controls="oldoraSharedMenu" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
+            <a class="oldora-mobile-brand" href="home.php"><img class="oldora-brand-logo" src="assets/oldora-mark.svg" alt="OLDORA"><strong>OLDORA</strong></a>
+            <a class="oldora-credit-pill" href="planing.php"><i class="fa-solid fa-bolt"></i><span data-oldora-balance>' . $credits . '</span></a>
         </header>
-        <aside class="oldora-menu-sidebar" id="oldoraSharedMenu">
+        <aside class="oldora-menu-sidebar" id="oldoraSharedMenu" aria-label="Main navigation">
             <div class="oldora-menu-brand">
-                <a href="home.php"><img class="oldora-brand-logo" src="Logo.png" alt="OLDORA"><span><strong>OLDORA</strong><small>Creator operating system</small></span></a>
+                <a href="home.php"><img class="oldora-brand-logo" src="assets/oldora-mark.svg" alt="OLDORA"><span><strong>OLDORA</strong><small>Creator operating system</small></span></a>
                 <button type="button" class="oldora-menu-icon oldora-menu-close" data-oldora-menu-close aria-label="Close menu"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <a class="oldora-balance-card" href="planing.php"><span><small>Available credits</small><strong>' . $credits . '</strong></span><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+            <a class="oldora-balance-card" href="planing.php"><span><small>Available credits</small><strong data-oldora-balance>' . $credits . '</strong></span><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
             <nav class="oldora-menu-links">' . $links . '</nav>
             <div class="oldora-menu-user">
                 <span class="oldora-menu-avatar">' . htmlspecialchars(strtoupper($initial)) . '</span>
@@ -99,10 +99,8 @@ if (!function_exists('oldora_inject_app_menu')) {
             return $html;
         }
 
-        $head = '<link rel="stylesheet" href="assets/app-shell.css?v=20260712-2">';
-        if (stripos($html, 'font-awesome') === false) {
-            $head .= '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">';
-        }
+        $head = '<link rel="stylesheet" href="assets/app-shell.css?v=20261006-1">';
+        $head .= '<link rel="stylesheet" href="assets/icons/css/all.min.css">';
         $html = preg_replace('/<\/head>/i', $head . '</head>', $html, 1);
         $html = preg_replace_callback('/<body\b([^>]*)>/i', function ($match) {
             $attributes = $match[1];
@@ -116,7 +114,7 @@ if (!function_exists('oldora_inject_app_menu')) {
         }, $html, 1);
         $markup = oldora_menu_markup($con, $file);
         $html = preg_replace('/(<body\b[^>]*>)/i', '$1' . $markup, $html, 1);
-        $html = preg_replace('/<\/body>/i', '<script src="assets/app-shell.js?v=20260712-2"></script></body>', $html, 1);
+        $html = preg_replace('/<\/body>/i', '<script src="assets/app-shell.js?v=20261006-1"></script></body>', $html, 1);
         return $html;
     }
 }

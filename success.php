@@ -23,7 +23,7 @@ $orderId = trim((string) ($_GET['order_id'] ?? ($_SESSION['last_payment_order'] 
 <main class="card" id="statusCard">
     <div class="icon" id="statusIcon"><span class="spinner"></span></div>
     <h1 id="statusTitle">Confirming payment</h1>
-    <p id="statusMessage">We are checking the blockchain and will add your credits automatically.</p>
+    <p id="statusMessage" role="status" aria-live="polite">We are checking the blockchain and will add your credits automatically.</p>
     <div class="order">Order: <?php echo htmlspecialchars($orderId); ?></div>
     <div class="actions"><a class="btn primary" href="planing.php">View credits</a><a class="btn secondary" href="support.php">Need help?</a></div>
 </main>
@@ -33,7 +33,8 @@ $orderId = trim((string) ($_GET['order_id'] ?? ($_SESSION['last_payment_order'] 
     var card=document.getElementById('statusCard'),icon=document.getElementById('statusIcon'),title=document.getElementById('statusTitle'),message=document.getElementById('statusMessage');
     function render(data){
         if(data.status==='paid'){
-            card.className='card success'; icon.innerHTML='✓'; title.textContent='Payment confirmed'; message.textContent=data.credits+' credits were added to your balance.'; return true;
+            card.className='card success'; icon.textContent='✓'; title.textContent='Payment confirmed'; message.textContent=data.credits+' credits confirmed. Available balance: '+data.balance_credits+' credits.';
+            window.dispatchEvent(new CustomEvent('oldora:balance',{detail:{credits:data.balance_credits}})); return true;
         }
         if(data.status==='failed'||data.status==='create_failed'){
             card.className='card failed'; icon.innerHTML='!'; title.textContent='Payment not completed'; message.textContent=data.message||'Please retry or contact support.'; return true;
@@ -43,12 +44,12 @@ $orderId = trim((string) ($_GET['order_id'] ?? ($_SESSION['last_payment_order'] 
     function check(){
         if(!order){card.className='card failed';icon.innerHTML='!';title.textContent='Order not found';message.textContent='Return to the plans page and try again.';return;}
         fetch('payment-status.php?order_id='+encodeURIComponent(order),{credentials:'same-origin',cache:'no-store'})
-            .then(function(r){return r.json()}).then(function(data){if(render(data))return;attempts++;if(attempts<40)setTimeout(check,5000)})
-            .catch(function(){attempts++;if(attempts<40)setTimeout(check,7000)});
+            .then(function(r){return r.json().then(function(data){if(!r.ok||!data.ok)throw new Error(data.message||'Payment status is temporarily unavailable.');return data;});})
+            .then(function(data){if(render(data))return;attempts++;if(attempts<40)setTimeout(check,5000);else message.textContent='Confirmation is still pending. Your balance will update automatically once payment is confirmed. You can safely return later.';})
+            .catch(function(error){attempts++;message.textContent=error.message||'We could not check your payment. Retrying…';if(attempts<40)setTimeout(check,7000);else{icon.textContent='…';title.textContent='Confirmation pending';message.textContent='Your payment will continue to be checked automatically. Return to your credits or contact support with this order number.';}});
     }
     check();
 })();
 </script>
 </body>
 </html>
-

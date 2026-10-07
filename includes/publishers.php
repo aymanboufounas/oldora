@@ -2,6 +2,21 @@
 
 require_once __DIR__ . '/content.php';
 
+// A remote write may have succeeded even if its response was lost.
+class OldoraPublishUncertainException extends RuntimeException {}
+
+function oldora_require_public_media_url(string $url): void
+{
+    $parts = parse_url($url);
+    $host = strtolower($parts['host'] ?? '');
+    if (($parts['scheme'] ?? '') !== 'https' || $host === '' || $host === 'localhost'
+        || !str_contains($host, '.') || isset($parts['user']) || isset($parts['pass'])
+        || (filter_var($host, FILTER_VALIDATE_IP) && !filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))) {
+        throw new RuntimeException('Publishing requires a public HTTPS media URL. Configure APP_URL before publishing.');
+    }
+}
+
+
 if (!function_exists('oldora_refresh_youtube_token')) {
     function oldora_refresh_youtube_token($con, array $account)
     {
@@ -119,16 +134,18 @@ if (!function_exists('oldora_publish_youtube')) {
         curl_close($ch);
         fclose($handle);
         if ($response === false || !in_array($status, [200, 201], true)) {
-            throw new RuntimeException($error ?: oldora_api_error_message($response, 'YouTube video upload failed.'));
+            throw new OldoraPublishUncertainException('YouTube upload could not be confirmed. Check the channel before retrying.');
         }
         $decoded = json_decode($response, true);
-        return (string) ($decoded['id'] ?? 'youtube-uploaded');
+        if (empty($decoded['id'])) throw new OldoraPublishUncertainException('YouTube returned no video ID. Check the channel before retrying.');
+        return (string) $decoded['id'];
     }
 }
 
 if (!function_exists('oldora_publish_instagram')) {
     function oldora_publish_instagram(array $account, array $content)
     {
+        oldora_require_public_media_url((string) ($content['asset_url'] ?? ''));
         $graph = oldora_env('META_GRAPH_VERSION', 'v25.0');
         $igId = (string) $account['channel_id'];
         if ($igId === '') {
@@ -137,6 +154,12 @@ if (!function_exists('oldora_publish_instagram')) {
         $caption = trim((string) ($content['caption'] ?? ''));
         $form = ['caption' => $caption, 'access_token' => $account['access_token']];
         if ($content['media_type'] === 'image') {
+            if (!empty($content['asset_path']) && is_file($content['asset_path'])) {
+                $image = @getimagesize($content['asset_path']);
+                if (!$image || $image[2] !== IMAGETYPE_JPEG || filesize($content['asset_path']) > 8 * 1024 * 1024) {
+                    throw new RuntimeException('Instagram requires a JPEG image smaller than 8 MB. Generate a new image in Studio.');
+                }
+            }
             $form['image_url'] = $content['asset_url'];
         } else {
             $form['media_type'] = 'REELS';
@@ -151,41 +174,45 @@ if (!function_exists('oldora_publish_instagram')) {
         }
 
         if ($content['media_type'] === 'video') {
-            $ready = false;
-            for ($attempt = 0; $attempt < 12; $attempt++) {
-                $status = oldora_http_json('GET', 'https://graph.facebook.com/' . rawurlencode($graph) . '/' . rawurlencode($containerId) . '?fields=status_code&access_token=' . rawurlencode($account['access_token']));
-                $code = (string) ($status['status_code'] ?? 'IN_PROGRESS');
-                if ($code === 'FINISHED') {
-                    $ready = true;
-                    break;
-                }
-                if ($code === 'ERROR' || $code === 'EXPIRED') {
-                    throw new RuntimeException('Instagram could not process the video.');
-                }
-                sleep(5);
-            }
-            if (!$ready) {
-                throw new RuntimeException('Instagram video is still processing; the job will retry.');
-            }
+            return ['id' => $containerId, 'status' => 'submitted'];
         }
-
-        $published = oldora_http_json('POST', 'https://graph.facebook.com/' . rawurlencode($graph) . '/' . rawurlencode($igId) . '/media_publish', ['Content-Type: application/x-www-form-urlencoded'], [
-            'creation_id' => $containerId,
-            'access_token' => $account['access_token']
-        ], true);
-        if (empty($published['id'])) {
-            throw new RuntimeException('Instagram did not return a published media ID.');
-        }
-        return (string) $published['id'];
+        return oldora_instagram_publish_container($account, $containerId);
     }
 }
 
-if (!function_exists('oldora_publish_tiktok')) {
-    function oldora_publish_tiktok($con, array $account, array $content, $privacyLevel)
-    {
-        if ($content['media_type'] !== 'video') {
-            throw new RuntimeException('TikTok direct post currently supports generated videos only.');
+function oldora_instagram_publish_container(array $account, string $containerId): string
+{
+        $graph = oldora_env('META_GRAPH_VERSION', 'v25.0');
+        $igId = (string) $account['channel_id'];
+        try {
+            $published = oldora_http_json('POST', 'https://graph.facebook.com/' . rawurlencode($graph) . '/' . rawurlencode($igId) . '/media_publish', ['Content-Type: application/x-www-form-urlencoded'], [
+                'creation_id' => $containerId,
+                'access_token' => $account['access_token']
+            ], true);
+        } catch (Throwable $error) {
+            throw new OldoraPublishUncertainException('Instagram publishing could not be confirmed. Check the account before retrying.', 0, $error);
         }
+        if (empty($published['id'])) {
+            throw new OldoraPublishUncertainException('Instagram returned no media ID. Check the account before retrying.');
+        }
+        return (string) $published['id'];
+}
+
+function oldora_instagram_container_status(array $account, string $containerId): array
+{
+    $graph = oldora_env('META_GRAPH_VERSION', 'v25.0');
+    $response = oldora_http_json('GET', 'https://graph.facebook.com/' . rawurlencode($graph) . '/' . rawurlencode($containerId)
+        . '?fields=status_code&access_token=' . rawurlencode($account['access_token']));
+    $status = (string) ($response['status_code'] ?? '');
+    if ($status === 'IN_PROGRESS') return ['status' => 'submitted'];
+    if ($status === 'FINISHED') return ['status' => 'published', 'id' => oldora_instagram_publish_container($account, $containerId)];
+    if (in_array($status, ['ERROR', 'EXPIRED'], true)) return ['status' => 'failed', 'error' => 'Instagram could not process this video. Check its format and try again.'];
+    if ($status === 'PUBLISHED') throw new OldoraPublishUncertainException('Instagram already published this container. Check the account before retrying.');
+    throw new RuntimeException('Instagram publishing status is temporarily unavailable.');
+}
+
+function oldora_refresh_tiktok_account($con, array $account): array
+{
         $expiresAt = !empty($account['expires_at']) ? strtotime($account['expires_at']) : 0;
         if ($expiresAt > 0 && $expiresAt <= time() + 300) {
             if (empty($account['refresh_token'])) {
@@ -211,18 +238,31 @@ if (!function_exists('oldora_publish_tiktok')) {
             $tokenStmt->execute();
             $tokenStmt->close();
         }
+    return $account;
+}
+
+if (!function_exists('oldora_publish_tiktok')) {
+    function oldora_publish_tiktok($con, array $account, array $content, $privacyLevel)
+    {
+        if ($content['media_type'] !== 'video') {
+            throw new RuntimeException('TikTok direct post currently supports generated videos only.');
+        }
+        oldora_require_public_media_url((string) ($content['asset_url'] ?? ''));
+        $account = oldora_refresh_tiktok_account($con, $account);
         $creator = oldora_http_json('POST', 'https://open.tiktokapis.com/v2/post/publish/creator_info/query/', [
             'Authorization: Bearer ' . $account['access_token'],
             'Content-Type: application/json; charset=UTF-8'
         ], new stdClass());
         $privacyOptions = $creator['data']['privacy_level_options'] ?? [];
         $privacy = $privacyLevel ?: oldora_env('TIKTOK_DEFAULT_PRIVACY', 'SELF_ONLY');
-        if ($privacyOptions && !in_array($privacy, $privacyOptions, true)) {
-            $privacy = in_array('SELF_ONLY', $privacyOptions, true) ? 'SELF_ONLY' : (string) $privacyOptions[0];
+        if (!is_array($privacyOptions) || !in_array($privacy, $privacyOptions, true)) {
+            throw new RuntimeException('The selected TikTok privacy setting is unavailable for this account. Choose an available setting before retrying.');
         }
+        $title = trim((string) (($content['caption'] ?? '') ?: ($content['prompt'] ?? '')));
+        $title = mb_substr($title, 0, 2200, 'UTF-8');
         $payload = [
             'post_info' => [
-                'title' => (string) ($content['caption'] ?: $content['prompt']),
+                'title' => $title,
                 'privacy_level' => $privacy,
                 'disable_duet' => false,
                 'disable_comment' => false,
@@ -236,13 +276,20 @@ if (!function_exists('oldora_publish_tiktok')) {
                 'video_url' => $content['asset_url']
             ]
         ];
-        $response = oldora_http_json('POST', 'https://open.tiktokapis.com/v2/post/publish/video/init/', [
-            'Authorization: Bearer ' . $account['access_token'],
-            'Content-Type: application/json; charset=UTF-8'
-        ], $payload);
-        $errorCode = (string) ($response['error']['code'] ?? 'ok');
-        if ($errorCode !== 'ok' || empty($response['data']['publish_id'])) {
-            throw new RuntimeException((string) ($response['error']['message'] ?? 'TikTok post initialization failed.'));
+        try {
+            $response = oldora_http_json('POST', 'https://open.tiktokapis.com/v2/post/publish/video/init/', [
+                'Authorization: Bearer ' . $account['access_token'],
+                'Content-Type: application/json; charset=UTF-8'
+            ], $payload);
+        } catch (Throwable $error) {
+            throw new OldoraPublishUncertainException('TikTok publishing could not be confirmed. Check the account before retrying.', 0, $error);
+        }
+        $errorCode = (string) ($response['error']['code'] ?? 'unknown');
+        if ($errorCode !== 'ok') {
+            throw new RuntimeException('TikTok rejected the publishing request. Check account permissions and privacy settings.');
+        }
+        if (empty($response['data']['publish_id'])) {
+            throw new OldoraPublishUncertainException('TikTok returned no publish ID. Check the account before retrying.');
         }
         return (string) $response['data']['publish_id'];
     }
@@ -290,8 +337,36 @@ if (!function_exists('oldora_publish_job')) {
             return oldora_publish_instagram($account, $content);
         }
         if ($platform === 'tiktok') {
-            return oldora_publish_tiktok($con, $account, $content, $job['privacy_level'] ?? '');
+            return ['id' => oldora_publish_tiktok($con, $account, $content, $job['privacy_level'] ?? ''), 'status' => 'submitted'];
         }
         throw new RuntimeException('Unsupported publishing platform.');
     }
+}
+
+// Provider receipts confirm acceptance. Poll the saved receipt without resubmitting.
+function oldora_get_publish_status($con, array $job): array
+{
+    $platform = strtolower((string) ($job['platform'] ?? ''));
+    if (!in_array($platform, ['tiktok', 'instagram'], true) || empty($job['provider_publish_id'])) {
+        throw new RuntimeException('No supported publishing receipt to check.');
+    }
+    $stmt = $con->prepare("SELECT t.* FROM user_tokens t INNER JOIN users u ON u.email = t.user_email
+        WHERE t.id = ? AND u.id = ? AND t.platform = ? LIMIT 1");
+    $stmt->bind_param('iis', $job['token_id'], $job['user_id'], $platform);
+    $stmt->execute();
+    $account = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$account) throw new RuntimeException('Reconnect the social account to check publication.');
+    if ($platform === 'instagram') return oldora_instagram_container_status($account, (string) $job['provider_publish_id']);
+    $account = oldora_refresh_tiktok_account($con, $account);
+    $response = oldora_http_json('POST', 'https://open.tiktokapis.com/v2/post/publish/status/fetch/', [
+        'Authorization: Bearer ' . $account['access_token'],
+        'Content-Type: application/json; charset=UTF-8'
+    ], ['publish_id' => $job['provider_publish_id']]);
+    if (($response['error']['code'] ?? '') !== 'ok') throw new RuntimeException('TikTok publishing status is temporarily unavailable.');
+    $status = $response['data']['status'] ?? '';
+    if ($status === 'PUBLISH_COMPLETE') return ['status' => 'published'];
+    if ($status === 'FAILED') return ['status' => 'failed', 'error' => 'TikTok could not publish this video. Review platform restrictions and reconnect if necessary.'];
+    if (in_array($status, ['PROCESSING_UPLOAD', 'PROCESSING_DOWNLOAD', 'SEND_TO_USER_INBOX'], true)) return ['status' => 'submitted'];
+    throw new RuntimeException('TikTok returned an unknown publishing state.');
 }

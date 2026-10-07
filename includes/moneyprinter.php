@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/env.php';
+require_once __DIR__ . '/content_options.php';
 
 function oldora_video_provider()
 {
@@ -68,18 +69,52 @@ function oldora_moneyprinter_task_path($jobId)
     return '/api/v1/tasks/' . rawurlencode($jobId);
 }
 
-function oldora_moneyprinter_start($prompt)
+function oldora_moneyprinter_payload(string $prompt, array $options = []): array
 {
-    $data = oldora_moneyprinter_request('/api/v1/videos', [
+    $provided = $options;
+    if (!$options) {
+        $configuredLanguage = oldora_env('MONEYPRINTER_VIDEO_LANGUAGE', 'en');
+        if (isset(oldora_content_option_choices()['language'][$configuredLanguage])) {
+            $options['language'] = $configuredLanguage;
+        }
+    }
+    $options = oldora_content_options($options, 'video');
+    $voice = oldora_content_voice($options);
+    if ($options['voice'] === 'auto' && (!$provided || $options['language'] === oldora_env('MONEYPRINTER_VIDEO_LANGUAGE', 'en'))) {
+        $voice = oldora_env('MONEYPRINTER_VOICE', $voice);
+    }
+    $arabic = in_array($options['language'], ['ar', 'ar-MA'], true);
+    $paces = ['slow' => 0.9, 'normal' => 1.0, 'brisk' => 1.1];
+    return [
         'video_subject' => $prompt,
         'video_aspect' => '9:16',
         'video_count' => 1,
-        'video_language' => oldora_env('MONEYPRINTER_VIDEO_LANGUAGE', 'en'),
-        'voice_name' => oldora_env('MONEYPRINTER_VOICE', 'en-US-AriaNeural'),
+        'video_language' => $options['language'],
+        'voice_name' => $voice,
+        'voice_rate' => $paces[$options['voice_pace']],
+        'voice_volume' => 1.0,
         'video_source' => oldora_env('MONEYPRINTER_VIDEO_SOURCE', 'pexels'),
-        'font_name' => oldora_env('MONEYPRINTER_FONT', 'MicrosoftYaHeiBold.ttc'),
-        'subtitle_enabled' => true
-    ]);
+        'font_name' => $arabic ? oldora_env('MONEYPRINTER_ARABIC_FONT', 'NotoSansArabic-Bold.ttf') : oldora_env('MONEYPRINTER_FONT', 'MicrosoftYaHeiBold.ttc'),
+        'subtitle_enabled' => $options['subtitle_style'] !== 'none',
+        'subtitle_position' => 'two_thirds_bottom',
+        'font_size' => $options['subtitle_style'] === 'bold' ? 64 : 52,
+        'text_fore_color' => $options['subtitle_style'] === 'bold' ? ($options['brand_color'] ?: '#F8E16C') : '#FFFFFF',
+        'stroke_color' => '#121826',
+        'stroke_width' => 2.0,
+        'bgm_type' => $options['music'] === 'soft' ? 'random' : '',
+        'bgm_volume' => $options['music'] === 'soft' ? 0.12 : 0.0,
+        'paragraph_number' => 1,
+        'match_materials_to_script' => true,
+        'video_concat_mode' => 'sequential',
+        'video_clip_duration' => 4,
+        'custom_system_prompt' => 'You write concise narration for original short social videos. ' . oldora_content_direction($options) . "\nReturn only the spoken narration. Start with a concrete hook, develop one idea, and end with a useful takeaway or a gentle call to action. Aim for around 90 to 120 words, adapting naturally to the selected language. Use short sentences that sound natural aloud. Do not include stage directions, headings, timestamps, hashtags or production notes. Do not fabricate facts or statistics. For Moroccan Arabic, write natural Darija in Arabic script.",
+        'video_script_prompt' => 'Follow the creative brief faithfully. Choose specific visual subjects that can be illustrated by stock footage. Keep the opening concise and avoid generic filler.'
+    ];
+}
+
+function oldora_moneyprinter_start($prompt, array $options = [])
+{
+    $data = oldora_moneyprinter_request('/api/v1/videos', oldora_moneyprinter_payload($prompt, $options));
     $id = $data['task_id'] ?? '';
     if (!is_string($id) || $id === '') throw new RuntimeException('MoneyPrinterTurbo returned no task ID.');
     oldora_moneyprinter_task_path($id);

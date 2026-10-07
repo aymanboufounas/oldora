@@ -11,27 +11,27 @@ error_reporting(E_ALL);
 // 1️⃣ تحميل ملف .env
 $envPath = __DIR__ . '/../.env'; // المسار: خطوة واحدة للخلف
 
-if (file_exists($envPath)) {
-    $env = oldora_env_all();
-} else {
+$env = oldora_env_all();
+if (!$env && oldora_env('DB_NAME') === '') {
     // احتياطي: إذا لم يتم العثور على ملف env، يمكنك وضع البيانات هنا مباشرة أو إيقاف الكود
-    die('Configuration file not found.');
+    throw new RuntimeException('Database configuration is missing.');
 }
 
 // 2️⃣ إنشاء الاتصال
-$db_host = $env['DB_HOST'] ?? 'localhost';
-$db_user = $env['DB_USER'] ?? 'root';
-$db_pass = $env['DB_PASS'] ?? '';
-$db_name = $env['DB_NAME'] ?? 'test';
+$db_host = oldora_env('DB_HOST', 'localhost');
+$db_user = oldora_env('DB_USER', 'root');
+$db_pass = oldora_env('DB_PASS');
+$db_name = oldora_env('DB_NAME', 'test');
 
 $con = new mysqli($db_host, $db_user, $db_pass, $db_name);
 
 if ($con->connect_error) {
-    die("Connection failed: " . $con->connect_error);
+    throw new RuntimeException('Database connection failed.');
 }
 
 // ضبط الترميز
 $con->set_charset("utf8mb4");
+$con->query("SET time_zone = '+00:00'");
 
 // 3️⃣ دوال مساعدة (Helper Functions)
 if (!function_exists('getUserIP')) {

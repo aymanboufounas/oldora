@@ -1,0 +1,74 @@
+.oldora-admin { background: radial-gradient(ellipse at 75% 0, #17233b 0, transparent 45%), #080d18; color: #f4f7fc; font-family: Inter, system-ui, sans-serif; }
+.oldora-admin .sidebar { background: #0c1220; border-right: 1px solid #243045; }
+.oldora-admin .sidebar h4 { color: #42e8e0; font-size: 18px; }
+.oldora-admin .nav-link { color: #a8b5c8; }
+.oldora-admin .nav-link:hover, .oldora-admin .nav-link.active { background: #152632; border-left-color: #42e8e0; }
+.oldora-admin .stat-card, .oldora-admin .chart-box, .oldora-admin .table-container { background: rgba(15,23,39,.88); border: 1px solid #253147; border-radius: 20px; box-shadow: 0 10px 28px rgba(0,0,0,.1); }
+.oldora-admin .stat-card { min-height: 156px; }
+.oldora-admin .stat-card p { color: #a8b5c8; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.oldora-admin .stat-card h3 { font-variant-numeric: tabular-nums; font-size: clamp(26px,3vw,36px); }
+.oldora-admin .stat-card small { color: #8fa1bc; display: block; margin-top: 8px; }
+.oldora-admin .text-muted { color: #9aa9c0 !important; }
+.admin-health-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; margin-bottom: 24px; }
+.admin-health-grid article { background: #101b2d; border: 1px solid #253147; border-radius: 16px; padding: 18px; display: grid; gap: 10px; }
+.admin-health-grid span { font-size: 12px; color: #a8b5c8; line-height: 1.5; }
+.admin-health-grid strong { font-size: 26px; color: #d9eafa; font-variant-numeric: tabular-nums; }
+.admin-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.admin-section-heading h5 { margin: 0 0 8px; font-weight: 700; }
+.admin-section-heading p, #adminFreshness { color: #94a6bf; font-size: 12px; margin: 0; }
+.admin-payments { margin: 0 0 28px; }
+.admin-payments td { vertical-align: middle; font-size: 12px; border-color: #243045; font-variant-numeric: tabular-nums; }
+.admin-payments th { color: #92a5c0; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; border-color: #243045; }
+.admin-payments td strong { font-size: 11px; overflow-wrap: anywhere; }
+.admin-payments td small { display: block; color: #8fa1bc; margin-top: 4px; max-width: 240px; overflow-wrap: anywhere; }
+.admin-payments .admin-error { color: #f6a9ae; }
+.admin-status { display: inline-block; padding: 5px 9px; border: 1px solid #405271; border-radius: 999px; font-size: 10px; color: #c7d3e3; white-space: nowrap; }
+.admin-status[data-state="paid"] { color: #6eefbf; border-color: #245947; background: #132e29; }
+.admin-status[data-state="pending"], .admin-status[data-state="creating"] { color: #f9d483; border-color: #635136; background: #2d281e; }
+.admin-status[data-state="failed"], .admin-status[data-state="create_failed"] { color: #f5a1af; border-color: #693342; background: #321b26; }
+.admin-empty { text-align: center; padding: 30px !important; color: #94a6bf; }
+.admin-mobile-nav { display: none; }
+.oldora-admin :is(a,button):focus-visible { outline: 3px solid #42e8e0; outline-offset: 3px; }
+@media (max-width: 1100px) { .admin-health-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 767px) { .admin-mobile-nav { display: flex; overflow-x: auto; gap: 18px; padding: 15px 22px; background: #0c1220; border-bottom: 1px solid #253147; } .admin-mobile-nav a { color: #cbd9e9; font-size: 13px; white-space: nowrap; } .admin-section-heading { flex-direction: column; } .oldora-admin h2 { font-size: 24px; } .oldora-admin .stat-card { min-height: 126px; } }
+@media (max-width: 380px) { .admin-health-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .oldora-admin * { transition: none !important; } }
+/* Keep the admin layout usable when an external UI CDN is unavailable. */
+.oldora-admin { margin: 0; }
+.oldora-admin *, .oldora-admin *::before, .oldora-admin *::after { box-sizing: border-box; }
+.oldora-admin .container-fluid { width: 100%; padding: 0; }
+.oldora-admin .row { display: flex; flex-wrap: wrap; margin: -8px; }
+.oldora-admin .row > div { min-width: 0; padding: 8px; }
+.oldora-admin .container-fluid > .row { margin: 0; align-items: stretch; }
+.oldora-admin .container-fluid > .row > .sidebar { flex: 0 0 220px; width: 220px; padding: 28px 18px; }
+.oldora-admin .container-fluid > .row > .col-md-10 { flex: 1; width: calc(100% - 220px); padding: 36px; }
+.oldora-admin .col-md-4 { flex: 0 0 33.333%; max-width: 33.333%; }
+.oldora-admin .col-lg-8 { flex: 0 0 66.667%; max-width: 66.667%; }
+.oldora-admin .col-lg-4 { flex: 0 0 33.333%; max-width: 33.333%; }
+.oldora-admin .nav { display: flex; flex-direction: column; }
+.oldora-admin .nav-link { display: block; text-decoration: none; }
+.oldora-admin .d-flex { display: flex; gap: 12px; }
+.oldora-admin .justify-content-between { justify-content: space-between; }
+.oldora-admin .align-items-center { align-items: center; }
+.oldora-admin .mb-0 { margin-bottom: 0; }
+.oldora-admin .mb-3 { margin-bottom: 16px; }
+.oldora-admin .mb-4 { margin-bottom: 24px; }
+.oldora-admin .mb-5 { margin-bottom: 32px; }
+.oldora-admin .mt-5 { margin-top: 32px; }
+.oldora-admin h2 { margin: 0 0 8px; }
+.oldora-admin .table-responsive { width: 100%; overflow-x: auto; }
+.oldora-admin .table { width: 100%; border-collapse: collapse; text-align: left; }
+.oldora-admin .table :is(th,td) { padding: 12px; border-bottom: 1px solid #253147; }
+.oldora-admin .table th { font-size: 11px; }
+.oldora-admin .table td { font-size: 12px; }
+.oldora-admin .btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 13px; border: 1px solid #354662; border-radius: 10px; color: #cbd9e9; text-decoration: none; font-size: 12px; white-space: nowrap; }
+.oldora-admin .badge { display: inline-block; padding: 5px 8px; border-radius: 7px; background: #263550; }
+@media (max-width: 991px) { .oldora-admin .col-lg-8, .oldora-admin .col-lg-4 { flex: 0 0 100%; max-width: 100%; } .oldora-admin .stat-card { padding: 18px; } }
+@media (max-width: 767px) {
+    .oldora-admin .container-fluid > .row > .sidebar { display: none; }
+    .oldora-admin .container-fluid > .row > .col-md-10 { width: 100%; padding: 24px 16px; }
+    .oldora-admin .col-md-4 { flex: 0 0 100%; max-width: 100%; }
+    .oldora-admin .col-md-10 > .d-flex { flex-wrap: wrap; }
+    .oldora-admin .table-container { padding: 18px; }
+    .oldora-admin .table td { overflow-wrap: anywhere; }
+}

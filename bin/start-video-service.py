@@ -8,6 +8,8 @@ os.chdir(root)
 sys.path.insert(0, str(root))
 from app.config import config
 
+if 'MONEYPRINTER_API_KEY' in os.environ:
+    config.app['api_key'] = os.environ['MONEYPRINTER_API_KEY']
 config.app['llm_provider'] = 'openai'
 config.app['openai_model_name'] = os.environ.get('VIDEO_LLM_MODEL', 'gpt-4o-mini')
 config.app['openai_base_url'] = 'https://api.openai.com/v1'

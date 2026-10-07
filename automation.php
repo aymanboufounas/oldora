@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/connection.php';
-require_once __DIR__ . '/includes/content.php';
+require_once __DIR__ . '/includes/automation_worker.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -10,6 +10,7 @@ if (empty($_SESSION['email'])) {
     header('Location: login-user.php');
     exit;
 }
+header('Cache-Control: private, no-store');
 
 oldora_ensure_content_schema($con);
 $csrf = oldora_csrf_token();
@@ -48,404 +49,43 @@ function automationRedirect()
     exit;
 }
 
-function getAutomationJob($con, $jobId, $userId)
-{
-    $stmt = $con->prepare(
-        'SELECT p.*, c.status AS media_status
-         FROM publish_jobs p
-         INNER JOIN content_items c ON c.id = p.content_id
-         WHERE p.id = ? AND p.user_id = ?
-         LIMIT 1'
-    );
-
-    $stmt->bind_param('ii', $jobId, $userId);
-    $stmt->execute();
-    $job = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    return $job ?: null;
-}
-
-function getNextPublishStatus($mediaStatus)
-{
-    return $mediaStatus === 'ready'
-        ? 'pending'
-        : 'waiting_media';
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!oldora_verify_csrf($_POST['csrf_token'] ?? '')) {
-        automationFlash(
-            'Your session expired. Refresh the page and try again.',
-            'error'
-        );
-
+        automationFlash('Your session expired. Refresh the page and try again.', 'error');
         automationRedirect();
     }
-
-    $action = strtolower(
-        trim((string)($_POST['action'] ?? ''))
-    );
-
-    $jobIds = [];
-
-    if (isset($_POST['job_id'])) {
-        $jobIds[] = (int)$_POST['job_id'];
-    }
-
-    if (
-        isset($_POST['selected_jobs']) &&
-        is_array($_POST['selected_jobs'])
-    ) {
-        foreach ($_POST['selected_jobs'] as $selectedId) {
-            $jobIds[] = (int)$selectedId;
-        }
-    }
-
-    $jobIds = array_slice(
-        array_values(
-            array_unique(
-                array_filter($jobIds)
-            )
-        ),
-        0,
-        100
-    );
-
+    $action = strtolower(trim((string) ($_POST['action'] ?? '')));
+    $rawIds = (array) ($_POST['selected_jobs'] ?? []);
+    if (isset($_POST['job_id'])) $rawIds[] = $_POST['job_id'];
+    $jobIds = array_slice(array_values(array_unique(array_filter(array_map('intval', $rawIds), fn($id) => $id > 0))), 0, 100);
     if (!$jobIds) {
-        automationFlash(
-            'Select at least one publishing job.',
-            'error'
-        );
-
+        automationFlash('Select at least one publishing job.', 'error');
         automationRedirect();
     }
-
     $changed = 0;
     $skipped = 0;
-
-    try {
-        foreach ($jobIds as $jobId) {
-            $job = getAutomationJob(
-                $con,
-                $jobId,
-                $userId
-            );
-
-            if (!$job) {
-                $skipped++;
-                continue;
-            }
-
-            $status = (string)$job['status'];
-            $mediaStatus = (string)$job['media_status'];
-
-            if ($action === 'pause') {
-                if (
-                    !in_array(
-                        $status,
-                        ['pending', 'waiting_media'],
-                        true
-                    )
-                ) {
-                    $skipped++;
-                    continue;
-                }
-
-                $stmt = $con->prepare(
-                    "UPDATE publish_jobs
-                     SET status = 'paused'
-                     WHERE id = ?
-                     AND user_id = ?
-                     AND status IN ('pending','waiting_media')"
-                );
-
-                $stmt->bind_param(
-                    'ii',
-                    $jobId,
-                    $userId
-                );
-            } elseif ($action === 'resume') {
-                if ($status !== 'paused') {
-                    $skipped++;
-                    continue;
-                }
-
-                $nextStatus = getNextPublishStatus(
-                    $mediaStatus
-                );
-
-                $stmt = $con->prepare(
-                    "UPDATE publish_jobs
-                     SET status = ?,
-                         scheduled_at = CASE
-                            WHEN scheduled_at < UTC_TIMESTAMP()
-                            THEN UTC_TIMESTAMP()
-                            ELSE scheduled_at
-                         END,
-                         last_error = NULL
-                     WHERE id = ?
-                     AND user_id = ?
-                     AND status = 'paused'"
-                );
-
-                $stmt->bind_param(
-                    'sii',
-                    $nextStatus,
-                    $jobId,
-                    $userId
-                );
-            } elseif ($action === 'publish_now') {
-                if (
-                    !in_array(
-                        $status,
-                        [
-                            'pending',
-                            'waiting_media',
-                            'paused',
-                            'failed'
-                        ],
-                        true
-                    )
-                ) {
-                    $skipped++;
-                    continue;
-                }
-
-                $nextStatus = getNextPublishStatus(
-                    $mediaStatus
-                );
-
-                $stmt = $con->prepare(
-                    "UPDATE publish_jobs
-                     SET status = ?,
-                         scheduled_at = UTC_TIMESTAMP(),
-                         attempts = 0,
-                         last_error = NULL
-                     WHERE id = ?
-                     AND user_id = ?
-                     AND status IN (
-                        'pending',
-                        'waiting_media',
-                        'paused',
-                        'failed'
-                     )"
-                );
-
-                $stmt->bind_param(
-                    'sii',
-                    $nextStatus,
-                    $jobId,
-                    $userId
-                );
-            } elseif ($action === 'retry') {
-                if ($status !== 'failed') {
-                    $skipped++;
-                    continue;
-                }
-
-                $nextStatus = getNextPublishStatus(
-                    $mediaStatus
-                );
-
-                $stmt = $con->prepare(
-                    "UPDATE publish_jobs
-                     SET status = ?,
-                         attempts = 0,
-                         last_error = NULL,
-                         scheduled_at = UTC_TIMESTAMP()
-                     WHERE id = ?
-                     AND user_id = ?
-                     AND status = 'failed'"
-                );
-
-                $stmt->bind_param(
-                    'sii',
-                    $nextStatus,
-                    $jobId,
-                    $userId
-                );
-            } elseif ($action === 'cancel') {
-                if (
-                    !in_array(
-                        $status,
-                        [
-                            'pending',
-                            'waiting_media',
-                            'paused',
-                            'failed'
-                        ],
-                        true
-                    )
-                ) {
-                    $skipped++;
-                    continue;
-                }
-
-                $stmt = $con->prepare(
-                    "UPDATE publish_jobs
-                     SET status = 'cancelled',
-                         last_error = NULL
-                     WHERE id = ?
-                     AND user_id = ?
-                     AND status IN (
-                        'pending',
-                        'waiting_media',
-                        'paused',
-                        'failed'
-                     )"
-                );
-
-                $stmt->bind_param(
-                    'ii',
-                    $jobId,
-                    $userId
-                );
-            } elseif ($action === 'delete') {
-                if (
-                    !in_array(
-                        $status,
-                        ['cancelled', 'failed'],
-                        true
-                    )
-                ) {
-                    $skipped++;
-                    continue;
-                }
-
-                $stmt = $con->prepare(
-                    "DELETE FROM publish_jobs
-                     WHERE id = ?
-                     AND user_id = ?
-                     AND status IN ('cancelled','failed')"
-                );
-
-                $stmt->bind_param(
-                    'ii',
-                    $jobId,
-                    $userId
-                );
-            } elseif ($action === 'reschedule') {
-                if (count($jobIds) !== 1) {
-                    throw new RuntimeException(
-                        'Rescheduling supports one job at a time.'
-                    );
-                }
-
-                if (
-                    !in_array(
-                        $status,
-                        [
-                            'pending',
-                            'waiting_media',
-                            'paused',
-                            'failed'
-                        ],
-                        true
-                    )
-                ) {
-                    throw new RuntimeException(
-                        'This job can no longer be rescheduled.'
-                    );
-                }
-
-                $scheduledRaw = trim(
-                    (string)($_POST['scheduled_at'] ?? '')
-                );
-
-                $timezoneName = trim(
-                    (string)($_POST['timezone'] ?? 'UTC')
-                );
-
-                if ($scheduledRaw === '') {
-                    throw new RuntimeException(
-                        'Choose a new publishing date and time.'
-                    );
-                }
-
-                try {
-                    $timezone = new DateTimeZone(
-                        $timezoneName
-                    );
-
-                    $scheduled = new DateTimeImmutable(
-                        $scheduledRaw,
-                        $timezone
-                    );
-
-                    $scheduledUtc = $scheduled
-                        ->setTimezone(
-                            new DateTimeZone('UTC')
-                        )
-                        ->format('Y-m-d H:i:s');
-                } catch (Throwable $ignored) {
-                    throw new RuntimeException(
-                        'The selected date, time, or timezone is invalid.'
-                    );
-                }
-
-                if (strtotime($scheduledUtc) < time() - 60) {
-                    throw new RuntimeException(
-                        'The publishing time cannot be in the past.'
-                    );
-                }
-
-                $nextStatus = getNextPublishStatus(
-                    $mediaStatus
-                );
-
-                $stmt = $con->prepare(
-                    'UPDATE publish_jobs
-                     SET status = ?,
-                         scheduled_at = ?,
-                         attempts = 0,
-                         last_error = NULL
-                     WHERE id = ?
-                     AND user_id = ?'
-                );
-
-                $stmt->bind_param(
-                    'ssii',
-                    $nextStatus,
-                    $scheduledUtc,
-                    $jobId,
-                    $userId
-                );
-            } else {
-                throw new RuntimeException(
-                    'Unknown automation action.'
-                );
-            }
-
-            $stmt->execute();
-            $changed += max(0, $stmt->affected_rows);
-            $stmt->close();
-        }
-
-        $message =
-            $changed .
-            ' job' .
-            ($changed === 1 ? '' : 's') .
-            ' updated.';
-
-        if ($skipped > 0) {
-            $message .=
-                ' ' .
-                $skipped .
-                ' skipped because their status no longer allows this action.';
-        }
-
-        automationFlash(
-            $message,
-            $changed > 0 ? 'success' : 'error'
-        );
-    } catch (Throwable $error) {
-        automationFlash(
-            $error->getMessage(),
-            'error'
-        );
+    $errors = [];
+    if ($action === 'reschedule' && count($jobIds) !== 1) {
+        automationFlash('Rescheduling supports one job at a time.', 'error');
+        automationRedirect();
     }
-
+    foreach ($jobIds as $jobId) {
+        try {
+            $updated = oldora_automation_job_action($con, $jobId, $userId, $action, [
+                'scheduled_at' => trim((string) ($_POST['scheduled_at'] ?? '')),
+                'timezone' => trim((string) ($_POST['timezone'] ?? 'UTC')),
+                'confirm_review' => ($_POST['confirm_review'] ?? '') === '1'
+            ]);
+            if ($updated) $changed++; else $skipped++;
+        } catch (Throwable $error) {
+            $skipped++;
+            $errors[] = $error->getMessage();
+        }
+    }
+    $message = $changed . ' job' . ($changed === 1 ? '' : 's') . ' updated.';
+    if ($skipped) $message .= ' ' . $skipped . ' skipped.';
+    if ($errors) $message .= ' ' . implode(' ', array_unique($errors));
+    automationFlash($message, $changed > 0 ? 'success' : 'error');
     automationRedirect();
 }
 
@@ -456,6 +96,7 @@ $stats = [
     'pending' => 0,
     'published' => 0,
     'failed' => 0,
+    'needs_review' => 0,
     'paused' => 0,
     'cancelled' => 0
 ];
@@ -481,7 +122,8 @@ while ($row = $statResult->fetch_assoc()) {
             [
                 'waiting_media',
                 'pending',
-                'publishing'
+                'publishing',
+                'submitted'
             ],
             true
         )
@@ -504,11 +146,12 @@ $jobStmt = $con->prepare(
         c.title,
         c.asset_url,
         c.status AS media_status,
+        c.progress AS media_progress,
         t.channel_name,
         t.picture
      FROM publish_jobs p
      INNER JOIN content_items c
-        ON c.id = p.content_id
+        ON c.id = p.content_id AND c.user_id = p.user_id
      LEFT JOIN user_tokens t
         ON t.id = p.token_id
      WHERE p.user_id = ?
@@ -525,6 +168,7 @@ while ($row = $jobResult->fetch_assoc()) {
 }
 
 $jobStmt->close();
+$workerHealth = oldora_automation_health($con);
 ?>
 <!doctype html>
 <html lang="en">
@@ -711,6 +355,29 @@ $jobStmt->close();
             border: 1px solid rgba(255,99,132,.2);
             background: rgba(255,99,132,.09);
         }
+
+        .worker-health {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 18px;
+            padding: 12px 15px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--panel);
+            color: var(--muted);
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        .worker-health strong { color: var(--green); }
+        .worker-health.attention strong { color: var(--amber); }
+        .worker-controls { display: flex; align-items: center; gap: 12px; }
+        .media-progress { width: 115px; height: 5px; accent-color: var(--cyan); display: block; margin-top: 6px; }
+        .pill.needs_review { color: var(--amber); border-color: rgba(255,209,102,.3); background: rgba(255,209,102,.1); }
+        .pill.submitted { color: var(--cyan); border-color: rgba(66,232,224,.3); background: rgba(66,232,224,.1); }
+        .attempts-note { display: block; margin-top: 6px; color: var(--muted); font-size: 9px; }
 
         .stats {
             display: grid;
@@ -1531,6 +1198,26 @@ $jobStmt->close();
         </nav>
     </header>
 
+    <?php $healthNeedsAttention = in_array($workerHealth['state'], ['never_run', 'stale', 'error'], true); ?>
+    <section class="worker-health <?php echo $healthNeedsAttention ? 'attention' : ''; ?>" aria-label="Automation health">
+        <div>
+            <strong><?php echo $healthNeedsAttention ? 'Automation needs attention' : 'Automation is active'; ?></strong><br>
+            <?php if ($workerHealth['state'] === 'never_run'): ?>
+                The queue is ready. Ask your administrator to start scheduled processing.
+            <?php elseif ($healthNeedsAttention): ?>
+                The queue has not completed a recent check. Your jobs stay saved while processing is restored.
+            <?php elseif ($workerHealth['state'] === 'running'): ?>
+                Checking media and scheduled posts now.
+            <?php else: ?>
+                Scheduled posts are checked automatically. Safe retries use increasing delays.
+            <?php endif; ?>
+        </div>
+        <div class="worker-controls">
+            <label><input type="checkbox" id="autoRefresh" checked> Refresh every 30 seconds</label>
+            <button class="quick-link" type="button" id="refreshQueue"><i class="fa-solid fa-rotate"></i> Refresh</button>
+        </div>
+    </section>
+
     <?php if ($flash): ?>
         <div class="flash <?php echo htmlspecialchars($flash['type']); ?>">
             <i class="fa-solid fa-<?php
@@ -1547,7 +1234,7 @@ $jobStmt->close();
         <article class="stat"
                  style="--tone:var(--amber);--glow:var(--amber)">
             <div class="stat-head">
-                <small>Waiting or scheduled</small>
+                <small>Queued or processing</small>
                 <i class="fa-solid fa-clock"></i>
             </div>
 
@@ -1581,7 +1268,7 @@ $jobStmt->close();
                 <i class="fa-solid fa-triangle-exclamation"></i>
             </div>
 
-            <strong><?php echo $stats['failed']; ?></strong>
+            <strong><?php echo $stats['failed'] + $stats['needs_review']; ?></strong>
         </article>
     </section>
 
@@ -1602,8 +1289,10 @@ $jobStmt->close();
                 <option value="">All statuses</option>
                 <option value="pending-group">Waiting & scheduled</option>
                 <option value="published">Published</option>
+                <option value="submitted">Platform processing</option>
                 <option value="paused">Paused</option>
                 <option value="failed">Failed</option>
+                <option value="needs_review">Check account before retry</option>
                 <option value="cancelled">Cancelled</option>
             </select>
 
@@ -1728,7 +1417,7 @@ $jobStmt->close();
 
                         $canSelect = !in_array(
                             $jobStatus,
-                            ['published', 'publishing'],
+                            ['published', 'publishing', 'submitted'],
                             true
                         );
 
@@ -1797,6 +1486,10 @@ $jobStmt->close();
                                             Job #<?php echo (int)$job['id']; ?>
                                             · Media
                                             <?php echo htmlspecialchars($job['media_status']); ?>
+                                            <?php if (in_array($job['media_status'], ['queued', 'processing', 'in_progress'], true)): ?>
+                                                · <?php echo (int) $job['media_progress']; ?>%
+                                                <progress class="media-progress" max="100" value="<?php echo (int) $job['media_progress']; ?>" aria-label="Video generation progress"></progress>
+                                            <?php endif; ?>
                                         </small>
                                     </span>
                                 </div>
@@ -1838,6 +1531,7 @@ $jobStmt->close();
 
                                     <?php echo htmlspecialchars($platform); ?>
                                 </span>
+                                <small class="attempts-note"><?php echo (int) $job['attempts']; ?>/3 attempts<?php echo $jobStatus === 'pending' && (int) $job['attempts'] > 0 ? ' · retry scheduled' : ''; ?></small>
                             </td>
 
                             <td>
@@ -1857,7 +1551,7 @@ $jobStmt->close();
                                 <span class="pill <?php echo htmlspecialchars($jobStatus); ?>">
                                     <?php
                                     echo htmlspecialchars(
-                                        str_replace(
+                                        $jobStatus === 'submitted' ? 'Platform processing' : str_replace(
                                             '_',
                                             ' ',
                                             $jobStatus
@@ -1865,6 +1559,7 @@ $jobStmt->close();
                                     );
                                     ?>
                                 </span>
+                                <?php if ($jobStatus === 'submitted'): ?><small class="attempts-note">Accepted; awaiting platform confirmation</small><?php endif; ?>
                             </td>
 
                             <td class="details <?php echo $job['last_error'] ? 'error' : ''; ?>"
@@ -1893,7 +1588,7 @@ $jobStmt->close();
                                                 'failed'
                                             ],
                                             true
-                                        )
+                                        ) && $job['media_status'] !== 'failed'
                                     ): ?>
                                         <button class="row-action publish-now"
                                                 type="button"
@@ -1929,7 +1624,7 @@ $jobStmt->close();
                                             <i class="fa-solid fa-pause"></i>
                                         </button>
 
-                                    <?php elseif ($jobStatus === 'paused'): ?>
+                                    <?php elseif ($jobStatus === 'paused' && $job['media_status'] !== 'failed'): ?>
                                         <button class="row-action simple-action"
                                                 type="button"
                                                 data-id="<?php echo (int)$job['id']; ?>"
@@ -1939,12 +1634,13 @@ $jobStmt->close();
                                             <i class="fa-solid fa-play"></i>
                                         </button>
 
-                                    <?php elseif ($jobStatus === 'failed'): ?>
+                                    <?php elseif (in_array($jobStatus, ['failed', 'needs_review'], true) && $job['media_status'] === 'ready'): ?>
                                         <button class="row-action simple-action"
                                                 type="button"
                                                 data-id="<?php echo (int)$job['id']; ?>"
                                                 data-action="retry"
-                                                title="Retry">
+                                                data-review="<?php echo $jobStatus === 'needs_review' ? '1' : '0'; ?>"
+                                                title="<?php echo $jobStatus === 'needs_review' ? 'Check account, then retry' : 'Retry'; ?>">
 
                                             <i class="fa-solid fa-rotate"></i>
                                         </button>
@@ -1957,7 +1653,8 @@ $jobStmt->close();
                                                 'pending',
                                                 'waiting_media',
                                                 'paused',
-                                                'failed'
+                                                'failed',
+                                                'needs_review'
                                             ],
                                             true
                                         )
@@ -1971,7 +1668,8 @@ $jobStmt->close();
                                             <i class="fa-solid fa-ban"></i>
                                         </button>
 
-                                    <?php elseif (
+                                    <?php endif; ?>
+                                    <?php if (
                                         in_array(
                                             $jobStatus,
                                             ['cancelled', 'failed'],
@@ -2012,6 +1710,7 @@ $jobStmt->close();
     <input type="hidden"
            name="job_id"
            id="singleJobId">
+    <input type="hidden" name="confirm_review" id="confirmReview" value="0">
 </form>
 
 <div class="modal-backdrop"
@@ -2330,7 +2029,12 @@ $jobStmt->close();
         );
     });
 
-    function submitAction(jobId, action) {
+    function submitAction(jobId, action, requiresReview) {
+        document.getElementById("confirmReview").value = "0";
+        if (requiresReview && action === "retry") {
+            if (!confirm("Check this connected account for an existing post first. Confirm that retrying will not create a duplicate post.")) return;
+            document.getElementById("confirmReview").value = "1";
+        }
         if (
             action === "cancel" &&
             !confirm("Cancel this publishing job?")
@@ -2358,7 +2062,8 @@ $jobStmt->close();
             function () {
                 submitAction(
                     button.dataset.id,
-                    button.dataset.action
+                    button.dataset.action,
+                    button.dataset.review === "1"
                 );
             }
         );
@@ -2464,6 +2169,16 @@ $jobStmt->close();
 
     filterRows();
     updateSelection();
+    const autoRefresh = document.getElementById("autoRefresh");
+    document.getElementById("refreshQueue").addEventListener("click", () => location.reload());
+    try { autoRefresh.checked = sessionStorage.getItem("oldoraAutomationRefresh") !== "off"; } catch (ignored) {}
+    autoRefresh.addEventListener("change", function () {
+        try { sessionStorage.setItem("oldoraAutomationRefresh", this.checked ? "on" : "off"); } catch (ignored) {}
+    });
+    setInterval(function () {
+        const editing = document.activeElement && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
+        if (autoRefresh.checked && !document.hidden && !editing && !modal.classList.contains("open") && !checks.some(check => check.checked) && !search.value && !status.value && !platform.value) location.reload();
+    }, 30000);
 })();
 </script>
 </body>

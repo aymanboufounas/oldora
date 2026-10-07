@@ -1,9 +1,11 @@
 <?php
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once dirname(__DIR__) . '/includes/env.php';
-$settings = oldora_env_all();
-if (($settings['DB_NAME'] ?? '') !== 'oldora_dev' && !in_array('--development-database', $argv, true)) {
-    throw new RuntimeException('Use oldora_dev, or explicitly pass --development-database for another development database.');
+$database = oldora_env('DB_NAME');
+$host = oldora_env('DB_HOST', 'localhost');
+$local = in_array($host, ['localhost', '127.0.0.1', '::1'], true) || preg_match('/^(?:localhost|127\.0\.0\.1):[0-9]+$/D', $host);
+if ((!$local || $database !== 'oldora_dev') && !in_array('--development-database', $argv, true)) {
+    throw new RuntimeException('Automatic bootstrap requires a local oldora_dev database. Use --development-database only for an explicitly selected development database.');
 }
 require_once dirname(__DIR__) . '/connection.php';
 require_once dirname(__DIR__) . '/includes/content.php';

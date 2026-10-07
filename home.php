@@ -169,7 +169,7 @@ if(isset($fetch_info['full_name'])){
 
     <link rel="icon" type="image/png" href="Logo.png">
 
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap-4.5.2.min.css">
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
@@ -1740,7 +1740,7 @@ if(isset($fetch_info['full_name'])){
                     <small>Available Credits</small>
                     <strong>
                         <i class="fa-solid fa-bolt" style="color:var(--orange);"></i>
-                        <span class="credits-display"><?php echo intval($my_credits); ?></span>
+                        <span class="credits-display" data-oldora-balance data-oldora-balance-value="<?php echo (int)$my_credits; ?>"><?php echo (int)$my_credits; ?></span>
                     </strong>
                 </div>
             </div>
@@ -1769,7 +1769,7 @@ if(isset($fetch_info['full_name'])){
 
                         <div class="input-icon-wrap">
                             <i class="fa-solid fa-link"></i>
-                            <input type="url" id="youtubeLink" class="form-control" placeholder="https://youtube.com/watch?v=..." required>
+                            <input type="url" id="youtubeLink" class="form-control" maxlength="2048" placeholder="https://youtube.com/watch?v=..." required>
                         </div>
                     </div>
 
@@ -1851,7 +1851,7 @@ if(isset($fetch_info['full_name'])){
                             Custom Script Optional
                         </label>
 
-                        <textarea id="customScript" class="form-control" rows="4" placeholder="Leave empty for auto-generation."></textarea>
+                        <textarea id="customScript" class="form-control" rows="4" maxlength="2200" placeholder="Leave empty for auto-generation. Up to 2,200 characters."></textarea>
                     </div>
 
                     <div id="dynamic-schedule-area" class="mt-4"></div>
@@ -2028,9 +2028,9 @@ if(isset($fetch_info['full_name'])){
 
 </div>
 
-<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="assets/vendor/jquery/jquery-3.5.1.min.js"></script>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/vendor/bootstrap/bootstrap-4.5.2.bundle.min.js"></script>
 
 <script>
 const connectedAccounts = <?php echo $accounts_json ? $accounts_json : '[]'; ?>;
@@ -2279,11 +2279,14 @@ $(document).ready(function(){
         }
     });
 
+    let generationBusy = false;
     $("#generateForm").on("submit", async function(e){
         e.preventDefault();
+        if (generationBusy) return;
 
         const qty = Math.max(1, Math.min(10, parseInt($("#videoCount").val()) || 1));
-        const credits = parseInt($(".credits-display").first().text()) || 0;
+        const rawCredits = Number($(".credits-display").first().attr("data-oldora-balance-value"));
+        const credits = Number.isSafeInteger(rawCredits) && rawCredits >= 0 ? rawCredits : 0;
         const neededCredits = qty * videoCreditCost;
         const sourceUrl = ($("#youtubeLink").val() || "").trim();
         const basePrompt = ($("#aiPrompt").val() || "").trim();
@@ -2293,6 +2296,11 @@ $(document).ready(function(){
 
         if (!sourceUrl || !basePrompt) {
             alert("Add the YouTube source and your AI prompt.");
+            return;
+        }
+        const captionText = customScript || basePrompt;
+        if (Array.from(captionText).length > 2200) {
+            alert("Shorten the caption or custom script to 2,200 characters or fewer.");
             return;
         }
         if (credits < neededCredits) {
@@ -2311,9 +2319,26 @@ $(document).ready(function(){
                 alert("Select a publish date and time for Video #" + i + ".");
                 return;
             }
-            jobs.push({index:i,date:date,time:time,tokenIds:tokenIds});
+            if (date && time && (!Number.isFinite(new Date(date + "T" + time).getTime()) || new Date(date + "T" + time).getTime() <= Date.now())) {
+                alert("Choose a future publish time for Video #" + i + ".");
+                return;
+            }
+            const creativePrompt = [
+                "Create an original 9:16 vertical Short.",
+                "Source topic URL for context only: " + sourceUrl + ". Do not copy source footage, logos, people, dialogue, or copyrighted visuals.",
+                "Creator prompt: " + basePrompt,
+                "Narration style: " + voiceName + ".",
+                customScript ? "Custom script/direction: " + customScript : "Use a strong hook, fast pacing, readable captions, original visuals and a satisfying ending.",
+                qty > 1 ? "This is variation " + i + " of " + qty + "; make it visually and narratively distinct." : ""
+            ].filter(Boolean).join("\n");
+            if (Array.from(creativePrompt).length > 4000) {
+                alert("The combined source, prompt and script exceed 4,000 characters. Shorten your brief before creating videos.");
+                return;
+            }
+            jobs.push({index:i,date:date,time:time,tokenIds:tokenIds,prompt:creativePrompt});
         }
 
+        generationBusy = true;
         $("#loadingOverlay").css("display", "flex");
         $("#loadingText").text("Starting AI video generation...");
         $("#loadingSubText").text("Creating 1 of " + qty + " videos.");
@@ -2323,22 +2348,14 @@ $(document).ready(function(){
         try {
             for (const job of jobs) {
                 $("#loadingSubText").text("Creating " + job.index + " of " + qty + " videos.");
-                const prompt = [
-                    "Create an original 9:16 vertical Short.",
-                    "Source topic URL for context only: " + sourceUrl + ". Do not copy source footage, logos, people, dialogue, or copyrighted visuals.",
-                    "Creator prompt: " + basePrompt,
-                    "Narration style: " + voiceName + ".",
-                    customScript ? "Custom script/direction: " + customScript : "Use a strong hook, fast pacing, readable captions, original visuals and a satisfying ending.",
-                    qty > 1 ? "This is variation " + job.index + " of " + qty + "; make it visually and narratively distinct." : ""
-                ].filter(Boolean).join("\n");
-
                 const data = new FormData();
                 data.append("csrf_token", oldoraCsrf);
                 data.append("media_type", "video");
-                data.append("prompt", prompt);
-                data.append("caption", customScript || basePrompt);
+                data.append("prompt", job.prompt);
+                data.append("caption", captionText);
                 data.append("publish_consent", "1");
-                data.append("privacy_level", "public");
+                data.append("privacy_level", "PUBLIC_TO_EVERYONE");
+                data.append("youtube_privacy", "public");
                 data.append("timezone", timezone);
                 if (job.date && job.time) data.append("scheduled_at", job.date + "T" + job.time);
                 job.tokenIds.forEach(id => data.append("token_ids[]", id));
@@ -2354,7 +2371,16 @@ $(document).ready(function(){
                 if (!response.ok) throw new Error(response.message || "Video generation failed.");
                 completed++;
                 latestContentId = response.content_id;
-                $(".credits-display").text(Math.max(0, credits - completed * videoCreditCost));
+                if (Number.isSafeInteger(response.balance_credits) && response.balance_credits >= 0) {
+                    window.dispatchEvent(new CustomEvent("oldora:balance", {detail:{credits:response.balance_credits}}));
+                } else {
+                    try {
+                        const balance = await $.ajax({url:"account-balance.php",dataType:"json",cache:false,timeout:8000});
+                        if (balance.ok) window.dispatchEvent(new CustomEvent("oldora:balance", {detail:{credits:balance.credits}}));
+                    } catch (balanceError) {
+                        // A completed generation remains queued if its balance refresh is unavailable.
+                    }
+                }
             }
 
             $("#loadingOverlay").hide();
@@ -2368,6 +2394,11 @@ $(document).ready(function(){
             $("#loadingOverlay").hide();
             const message = error.responseJSON && error.responseJSON.message ? error.responseJSON.message : (error.message || "Video generation failed.");
             alert(message + (completed ? " " + completed + " video(s) were already queued." : ""));
+            $.ajax({url:"account-balance.php",dataType:"json",cache:false,timeout:8000}).done(function(balance){
+                if (balance.ok) window.dispatchEvent(new CustomEvent("oldora:balance", {detail:{credits:balance.credits}}));
+            });
+        } finally {
+            generationBusy = false;
         }
     });
 

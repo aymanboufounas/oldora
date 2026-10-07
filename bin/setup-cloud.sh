@@ -22,12 +22,24 @@ if [ ! -e "$setup/MoneyPrinterTurbo/config.toml" ]; then
   cp "$setup/MoneyPrinterTurbo/config.example.toml" "$setup/MoneyPrinterTurbo/config.toml"
 fi
 cat > "$setup/bin/php" <<'EOF'
-#!/bin/sh
-exec docker run --rm --network host -u "$(id -u):$(id -g)" -v /workspace:/workspace -w "$PWD" oldora-php-dev php "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+source /workspace/oldora/bin/cloud-runtime-env.sh
+exec docker run --rm --network host "${oldora_docker_env_args[@]}" -u "$(id -u):$(id -g)" -v /workspace:/workspace -w "$PWD" oldora-php-dev php "$@"
 EOF
 chmod +x "$setup/bin/php"
+# Arabic captions must use a font inside MoneyPrinterTurbo's allowed font directory.
+font=/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf
+if [ -f "$font" ] && [ ! -f "$setup/MoneyPrinterTurbo/resource/fonts/NotoSansArabic-Bold.ttf" ]; then
+  cp "$font" "$setup/MoneyPrinterTurbo/resource/fonts/NotoSansArabic-Bold.ttf"
+fi
 # Persist image artifacts as files; live Docker processes do not survive snapshots.
-if [ ! -f "$setup/oldora-php-dev.tar" ]; then docker save -o "$setup/oldora-php-dev.tar" oldora-php-dev; fi
+php_image="$(docker image inspect --format '{{.Id}}' oldora-php-dev)"
+if [ ! -f "$setup/oldora-php-dev.tar" ] || [ "$(cat "$setup/php-image.id" 2>/dev/null || true)" != "$php_image" ]; then
+  docker save -o "$setup/oldora-php-dev.tar.tmp" oldora-php-dev
+  mv "$setup/oldora-php-dev.tar.tmp" "$setup/oldora-php-dev.tar"
+  printf '%s\n' "$php_image" > "$setup/php-image.id"
+fi
 if [ ! -f "$setup/mariadb-dev.tar" ]; then docker save -o "$setup/mariadb-dev.tar" mariadb:11.4@sha256:1292844148b311e4ed4300022a996d39083f415a963e970cf47cad1b3b18e3a6; fi
 mkdir -p uploads/generated
 "$setup/bin/php" -r 'foreach (["mysqli","curl","mbstring","openssl"] as $e) { if (!extension_loaded($e)) throw new RuntimeException("Missing ".$e); } echo "PHP extensions ready\n";'
